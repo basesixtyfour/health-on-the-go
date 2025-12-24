@@ -20,7 +20,7 @@ if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
 
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
-  basePath: "/api/auth",
+  basePath: "/api/v1/auth",
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
