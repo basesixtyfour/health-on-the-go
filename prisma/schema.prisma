@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// Better-Auth Tables (DO NOT MODIFY)
+// ============================================
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  role          UserRole @default(PATIENT)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  // Telehealth relations
+  consultationsAsPatient Consultation[] @relation("PatientConsultations")
+  consultationsAsDoctor  Consultation[] @relation("DoctorConsultations")
+  doctorProfile          DoctorProfile?
+  auditEvents            AuditEvent[]
+
+  @@map("user")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ============================================
+// Telehealth Domain Models
+// ============================================
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum ConsultationStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAID
+  IN_CALL
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  PAYMENT_FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model DoctorProfile {
+  id          String   @id @default(cuid())
+  doctorId    String   @unique
+  specialties String[] // Array of specialty strings (e.g., ["CARDIOLOGY", "DERMATOLOGY"])
+  licenseId   String?
+  timezone    String?  @default("UTC")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  doctor User @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+}
+
+model Consultation {
+  id               String             @id @default(cuid())
+  patientId        String
+  doctorId         String?
+  specialty        String
+  status           ConsultationStatus @default(CREATED)
+  scheduledStartAt DateTime?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  patient       User           @relation("PatientConsultations", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor        User?          @relation("DoctorConsultations", fields: [doctorId], references: [id], onDelete: SetNull)
+  patientIntake PatientIntake?
+  payments      Payment[]
+  videoSession  VideoSession?
+  auditEvents   AuditEvent[]
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PatientIntake {
+  id                String   @id @default(cuid())
+  consultationId    String   @unique
+  nameOrAlias       String
+  ageRange          String? // e.g., "18-39", "40-64", "65+"
+  chiefComplaint    String?
+  consentAcceptedAt DateTime
+  createdAt         DateTime @default(now())
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  consultationId     String
+  provider           String        @default("SQUARE")
+  status             PaymentStatus @default(PENDING)
+  amount             Int // Amount in smallest currency unit (cents)
+  currency           String        @default("USD")
+  providerCheckoutId String?
+  providerPaymentId  String?
+  providerOrderId    String?
+  paidAt             DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@unique([providerCheckoutId])
+  @@unique([providerPaymentId])
+  @@unique([providerOrderId])
+  @@index([consultationId])
+  @@index([status])
+}
+
+model VideoSession {
+  id             String    @id @default(cuid())
+  consultationId String    @unique
+  provider       String    @default("DAILY")
+  roomName       String    @unique
+  roomUrl        String
+  createdAt      DateTime  @default(now())
+  endedAt        DateTime?
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@index([consultationId])
+  @@index([roomName])
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  actorUserId    String?
+  consultationId String?
+  eventType      String // e.g., "CONSULT_CREATED", "PAYMENT_CONFIRMED", "JOIN_TOKEN_MINTED"
+  eventMetadata  Json? // No PHI - just operational data
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([consultationId])
+  @@index([eventType])
+  @@index([createdAt])
+}
