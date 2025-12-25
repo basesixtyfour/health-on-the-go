@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ShieldAlert } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
 export default async function AdminDashboard() {
     const session = await auth.api.getSession({
@@ -25,13 +25,13 @@ export default async function AdminDashboard() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-white dark:bg-slate-800 shadow-sm border-red-100 dark:border-red-900">
+                <Card className="bg-white dark:bg-slate-800 shadow-sm border-green-100 dark:border-green-900">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">System Status</CardTitle>
-                        <ShieldAlert className="h-4 w-4 text-red-500" />
+                        <ShieldCheck className="h-4 w-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-red-600">Operational</div>
+                        <div className="text-2xl font-bold text-green-600">Operational</div>
                         <p className="text-xs text-slate-500 mt-1">
                             All systems nominal
                         </p>
