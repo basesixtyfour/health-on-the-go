@@ -1,36 +1,18 @@
 import {
-  PrismaClient,
   UserRole,
   ConsultationStatus,
   PaymentStatus,
 } from "../app/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
+import { prisma } from "../prisma";
 import * as dotenv from "dotenv";
 
 // Load environment variables
 dotenv.config();
 
-const DATABASE_URL = process.env.DATABASE_URL;
-
-if (!DATABASE_URL || DATABASE_URL.trim() === "") {
-  console.error("ERROR: Missing required DATABASE_URL environment variable.");
+if (!prisma) {
+  console.error("ERROR: Prisma client instance is not available.");
   process.exit(1);
 }
-
-const isPrismaPostgres = DATABASE_URL.startsWith("prisma+postgres://");
-
-const prisma = isPrismaPostgres
-  ? new PrismaClient({
-      accelerateUrl: DATABASE_URL,
-    })
-  : new PrismaClient({
-      adapter: new PrismaPg(
-        new Pool({
-          connectionString: DATABASE_URL,
-        })
-      ),
-    });
 
 // ============================================
 // Test Data Configuration
@@ -63,6 +45,29 @@ function randomDate(start: Date, end: Date): Date {
 
 function generateCUID(): string {
   return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function generateCompletedConsultationDates(
+  oneWeekAgo: Date,
+  now: Date
+): { scheduledStartAt: Date; startedAt: Date; endedAt: Date } {
+  // Pick scheduledStartAt between oneWeekAgo and now
+  const scheduledStartAt = randomDate(oneWeekAgo, now);
+
+  // startedAt is scheduledStartAt plus a small random offset (up to 1 hour)
+  const startOffsetMs = Math.random() * 60 * 60 * 1000; // 0 to 1 hour in milliseconds
+  const startedAt = new Date(scheduledStartAt.getTime() + startOffsetMs);
+
+  // endedAt is startedAt plus a small random offset (up to 1 hour)
+  const endOffsetMs = Math.random() * 60 * 60 * 1000; // 0 to 1 hour in milliseconds
+  const endedAt = new Date(startedAt.getTime() + endOffsetMs);
+
+  // Ensure endedAt doesn't exceed now
+  if (endedAt > now) {
+    endedAt.setTime(now.getTime());
+  }
+
+  return { scheduledStartAt, startedAt, endedAt };
 }
 
 // ============================================
@@ -228,26 +233,32 @@ async function createConsultations(
 
   const consultations = [
     // Completed consultations
-    {
-      id: generateCUID(),
-      patientId: patients[0].id,
-      doctorId: doctors[0].id,
-      specialty: "General Practice",
-      status: ConsultationStatus.COMPLETED,
-      scheduledStartAt: randomDate(oneWeekAgo, now),
-      startedAt: randomDate(oneWeekAgo, now),
-      endedAt: randomDate(oneWeekAgo, now),
-    },
-    {
-      id: generateCUID(),
-      patientId: patients[1].id,
-      doctorId: doctors[1].id,
-      specialty: "Cardiology",
-      status: ConsultationStatus.COMPLETED,
-      scheduledStartAt: randomDate(oneWeekAgo, now),
-      startedAt: randomDate(oneWeekAgo, now),
-      endedAt: randomDate(oneWeekAgo, now),
-    },
+    (() => {
+      const dates = generateCompletedConsultationDates(oneWeekAgo, now);
+      return {
+        id: generateCUID(),
+        patientId: patients[0].id,
+        doctorId: doctors[0].id,
+        specialty: "General Practice",
+        status: ConsultationStatus.COMPLETED,
+        scheduledStartAt: dates.scheduledStartAt,
+        startedAt: dates.startedAt,
+        endedAt: dates.endedAt,
+      };
+    })(),
+    (() => {
+      const dates = generateCompletedConsultationDates(oneWeekAgo, now);
+      return {
+        id: generateCUID(),
+        patientId: patients[1].id,
+        doctorId: doctors[1].id,
+        specialty: "Cardiology",
+        status: ConsultationStatus.COMPLETED,
+        scheduledStartAt: dates.scheduledStartAt,
+        startedAt: dates.startedAt,
+        endedAt: dates.endedAt,
+      };
+    })(),
     // Paid - ready for consultation
     {
       id: generateCUID(),
