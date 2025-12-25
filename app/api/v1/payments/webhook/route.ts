@@ -24,23 +24,30 @@ export async function POST(request: NextRequest) {
     const bodyText = await request.text();
 
 
+    // Validate Runtime Configuration
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    if (!baseUrl) {
+        console.error("Missing NEXT_PUBLIC_BASE_URL during webhook processing");
+        return NextResponse.json({ error: "Server Configuration Error" }, { status: 500 });
+    }
 
     // Verify signature manually to avoid SDK version conflicts
     try {
         const hmac = createHmac("sha256", SIGNATURE_KEY);
         // The notification URL must be exact. In dev, this might mismatch if using localtunnel/ngrok, so be careful.
         // Square signs: url + body
-        const notificationUrl = process.env.NEXT_PUBLIC_APP_URL + "/api/v1/payments/webhook";
+        const notificationUrl = baseUrl + "/api/v1/payments/webhook";
         hmac.update(notificationUrl + bodyText);
         const calculatedSignature = hmac.digest("base64");
 
         if (calculatedSignature !== signature) {
             console.warn("Invalid Webhook Signature");
             console.warn(`Expected: ${calculatedSignature}, Got: ${signature}`);
-            // return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
+            return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
         }
     } catch (err) {
         console.error("Error verifying signature:", err);
+        return NextResponse.json({ error: "Signature verification failed" }, { status: 500 });
     }
 
     let event;
