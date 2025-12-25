@@ -1,13 +1,13 @@
+import * as dotenv from "dotenv";
+
+dotenv.config();
+
 import {
   UserRole,
   ConsultationStatus,
   PaymentStatus,
 } from "../app/generated/prisma/client";
 import { prisma } from "../prisma";
-import * as dotenv from "dotenv";
-
-// Load environment variables
-dotenv.config();
 
 if (!prisma) {
   console.error("ERROR: Prisma client instance is not available.");
