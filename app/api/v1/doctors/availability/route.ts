@@ -59,7 +59,11 @@ function parsePatientInputDate(
   // Try parsing. If string contains 'T' and an offset, fromISO will include it.
   const dtFromISO = DateTime.fromISO(dateStr, { setZone: true });
 
-  if (dtFromISO.isValid && dtFromISO.offset !== 0 && dateStr.includes("+")) {
+  if (
+    dtFromISO.isValid &&
+    dtFromISO.offset !== 0 &&
+    dateStr.match(/([+-]\d{2}:\d{2}|Z)$/)
+  ) {
     // If the string had an explicit offset, dtFromISO.setZone has already used it.
     return { dateTime: dtFromISO };
   }
