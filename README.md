@@ -1,4 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Health on the Go
+
+A modern telehealth platform built with Next.js that enables patients to book and conduct video consultations with doctors.
+
+## Features
+
+- 🔐 **OAuth Authentication** - Secure Google OAuth login via Better Auth
+- 👨‍⚕️ **Doctor Management** - Browse doctors by specialty with availability slots
+- 📅 **Smart Scheduling** - Timezone-aware appointment booking
+- 💳 **Payment Integration** - Square payment processing support
+- 📹 **Video Sessions** - Daily.co video consultation integration
+- 📋 **Patient Intake** - Digital intake forms with consent management
+- 🔒 **Role-Based Access** - Patient, Doctor, and Admin roles
+
+## Documentation
+
+- 📚 [**API Documentation**](./docs/API.md) - Complete REST API reference
+
+## Tech Stack
+
+- **Framework:** Next.js 15 (App Router)
+- **Database:** PostgreSQL with Prisma ORM
+- **Authentication:** Better Auth with Google OAuth
+- **Language:** TypeScript
+- **Styling:** CSS
 
 ## Getting Started
 
