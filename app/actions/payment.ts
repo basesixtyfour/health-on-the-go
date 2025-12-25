@@ -24,6 +24,11 @@ export async function createCheckoutSession(consultationId: string) {
 
     if (!consultation) throw new Error("Consultation not found");
 
+    // Verify ownership
+    if (consultation.patientId !== session.user.id) {
+      throw new Error("Forbidden: You are not authorized to pay for this consultation");
+    }
+
     // Mock fee logic - in production, pull from your specialty constants
     const amountInCents = 5000;
 
