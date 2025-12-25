@@ -1,78 +1,109 @@
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+"use client";
+
+import { Activity, AlertCircle, Calendar, Users, Settings, FileText } from "lucide-react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Users, CalendarCheck, Activity } from "lucide-react";
+import { QueueCard } from "@/components/dashboard/doctor/QueueCard";
+import { ScheduleOverview } from "@/components/dashboard/doctor/ScheduleOverview";
+import { StatCard } from "@/components/dashboard/doctor/StatCard";
 
-export default async function DoctorDashboard() {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    });
-
-    if (!session || session.user.role !== "DOCTOR") {
-        redirect("/dashboard");
-    }
-
+export default function DoctorDashboard() {
     return (
-        <div className="space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                    Doctor Dashboard
-                </h1>
-                <p className="mt-2 text-slate-600 dark:text-slate-400">
-                    Overview of your schedule and patient queue.
-                </p>
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <h1 className="text-3xl font-bold tracking-tight">Doctor Dashboard</h1>
+                <div className="text-sm text-muted-foreground">
+                    {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-white dark:bg-slate-800 shadow-sm border-blue-100 dark:border-blue-900">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">In Queue</CardTitle>
-                        <Users className="h-4 w-4 text-blue-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">3 Patients</div>
-                        <p className="text-xs text-slate-500 mt-1">
-                            Waiting for consultation
-                        </p>
-                        <Button className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white">
-                            Start Next Visit
-                        </Button>
-                    </CardContent>
-                </Card>
+            {/* Main Widgets Section */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {/* Queue - Takes up 1 slot */}
+                <QueueCard />
 
-                <Card className="bg-white dark:bg-slate-800 shadow-sm border-slate-200 dark:border-slate-700">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Today's Schedule</CardTitle>
-                        <CalendarCheck className="h-4 w-4 text-slate-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">8 Appointments</div>
-                        <p className="text-xs text-slate-500 mt-1">
-                            4 completed, 4 remaining
-                        </p>
-                        <Button className="w-full mt-4" variant="outline">
-                            View Calendar
-                        </Button>
-                    </CardContent>
-                </Card>
+                {/* Schedule - Takes up 2 slots visually in ScheduleOverview component logic if styled right, 
+            but here we place it in grid. Let's adjust ScheduleOverview to be flexible or specific. 
+            Actually, let's keep it simple: 4 columns.
+            Queue: 1 col, Patients: 1 col, Alerts: 1 col, Status: 1 col?
+            User asked for: Queue, Schedule, Status, Alerts.
+            Let's do:
+            [ Queue ] [ Schedule (2 cols? or 1) ] [ Status ] 
+        */}
 
-                <Card className="bg-white dark:bg-slate-800 shadow-sm border-slate-200 dark:border-slate-700">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Patient Status</CardTitle>
-                        <Activity className="h-4 w-4 text-green-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">Active</div>
-                        <p className="text-xs text-slate-500 mt-1">
-                            System fully operational
-                        </p>
-                        <Button className="w-full mt-4" variant="ghost">
-                            Check Alerts
-                        </Button>
-                    </CardContent>
-                </Card>
+                {/* For now, uniform grid. ScheduleOverview header says "col-span-1 md:col-span-2" */}
+                <ScheduleOverview />
+
+                {/* <StatCard
+                    title="Patient Status"
+                    value="Active"
+                    description="System fully operational"
+                    icon={Activity}
+                    status="success"
+                />
+
+                <StatCard
+                    title="Alerts"
+                    value="3 Alerts"
+                    description="Check Alerts Dashboard"
+                    icon={AlertCircle}
+                    status="warning"
+                /> */}
+            </div>
+
+            {/* Navigation Quick Links (Optional, but good for "My Patients", "Consultations" etc) */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Link href="/dashboard/doctor/schedule">
+                    <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Calendar className="h-5 w-5" /> Schedule
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">Manage appointments and availability.</p>
+                        </CardContent>
+                    </Card>
+                </Link>
+
+                <Link href="/dashboard/doctor/patients">
+                    <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Users className="h-5 w-5" /> My Patients
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">View patient records and history.</p>
+                        </CardContent>
+                    </Card>
+                </Link>
+
+                <Link href="/dashboard/doctor/consultations">
+                    <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <FileText className="h-5 w-5" /> Consultations
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">Access past consultation reports.</p>
+                        </CardContent>
+                    </Card>
+                </Link>
+
+                <Link href="/dashboard/doctor/settings">
+                    <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Settings className="h-5 w-5" /> Settings
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">Configure profile and preferences.</p>
+                        </CardContent>
+                    </Card>
+                </Link>
             </div>
         </div>
     );
