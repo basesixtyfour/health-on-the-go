@@ -25,7 +25,7 @@ export async function createCheckoutSession(consultationId: string) {
     if (!consultation) throw new Error("Consultation not found");
 
     // Mock fee logic - in production, pull from your specialty constants
-    const amountInCents = 5000; 
+    const amountInCents = 5000;
 
     /**
      * SDK RESOLUTION:
@@ -41,9 +41,9 @@ export async function createCheckoutSession(consultationId: string) {
           {
             name: `${consultation.specialty} Consultation`,
             quantity: "1",
-            basePriceMoney: { 
-              amount: BigInt(amountInCents), 
-              currency: "USD" 
+            basePriceMoney: {
+              amount: BigInt(amountInCents),
+              currency: "USD"
             },
           },
         ],
@@ -53,13 +53,18 @@ export async function createCheckoutSession(consultationId: string) {
       }
     });
 
+
+    if (!result.paymentLink?.id) {
+      throw new Error("Failed to retrieve payment link ID from Square");
+    }
+
     // Create a pending record to track the transaction
     await prisma.payment.create({
       data: {
         consultationId: consultationId,
         amount: amountInCents,
         status: "PENDING",
-        providerCheckoutId: result.paymentLink?.id || "",
+        providerCheckoutId: result.paymentLink.id,
       }
     });
 
@@ -74,10 +79,18 @@ export async function createCheckoutSession(consultationId: string) {
  * Pollable helper to check if a consultation has been paid.
  */
 export async function getPaymentStatus(consultationId: string) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
   const payment = await prisma.payment.findFirst({
-    where: { 
-      consultationId, 
-      status: "PAID" 
+    where: {
+      consultationId,
+      status: "PAID"
     },
   });
   return { paid: !!payment };

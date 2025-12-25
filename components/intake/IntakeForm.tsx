@@ -1,9 +1,9 @@
 "use client";
 import React, { useState } from 'react';
-import { 
-  UserCircle, 
-  Stethoscope, 
-  ShieldCheck, 
+import {
+  UserCircle,
+  Stethoscope,
+  ShieldCheck,
   ChevronRight,
   Loader2,
   AlertCircle,
@@ -39,10 +39,12 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
     setLoading(true);
     setError("");
 
-    // Simulation of Server Action/API Call
+    // TODO: Replace with actual Server Action
+    // const result = await submitIntake(formData);
+
     setTimeout(() => {
-      console.log("Form Submitted:", formData);
-      if (onSuccess) onSuccess(`c_${Math.random().toString(36).substr(2, 9)}`);
+      // Secure ID generation
+      if (onSuccess) onSuccess(`c_${crypto.randomUUID()}`);
       setLoading(false);
     }, 1500);
   };
@@ -69,11 +71,11 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
           <StepHeader icon={Stethoscope} title="Consultation Category" stepNumber="1" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {SPECIALTIES.map((s) => (
-              <SpecialtyCard 
+              <SpecialtyCard
                 key={s.id}
                 specialty={s}
                 isSelected={formData.specialty === s.id}
-                onSelect={(id) => setFormData({...formData, specialty: id})}
+                onSelect={(id) => setFormData({ ...formData, specialty: id })}
               />
             ))}
           </div>
@@ -85,23 +87,23 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
             <section>
               <StepHeader icon={UserCircle} title="Identity & Demographics" stepNumber="2" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <InputField 
+                <InputField
                   label="Name or Alias"
                   placeholder="e.g. John Doe"
                   required
                   value={formData.nameOrAlias}
-                  onChange={e => setFormData({...formData, nameOrAlias: e.target.value})}
+                  onChange={e => setFormData({ ...formData, nameOrAlias: e.target.value })}
                 />
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-600 ml-1 uppercase tracking-tighter">
                     Patient Age
                   </label>
                   <div className="relative">
-                    <select 
+                    <select
                       required
                       className="w-full p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all outline-none appearance-none cursor-pointer shadow-sm text-slate-900 font-medium"
                       value={formData.ageRange}
-                      onChange={e => setFormData({...formData, ageRange: e.target.value})}
+                      onChange={e => setFormData({ ...formData, ageRange: e.target.value })}
                     >
                       <option value="">Select age range</option>
                       {AGE_RANGES.map(range => <option key={range} value={range}>{range}</option>)}
@@ -120,12 +122,12 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
                   <span>Chief Medical Complaint</span>
                   <span className="text-[10px] text-slate-400">Required</span>
                 </label>
-                <textarea 
-                  required 
+                <textarea
+                  required
                   placeholder="Describe your current symptoms or reason for today's visit..."
                   className="w-full p-5 bg-white border border-slate-200 rounded-2xl h-44 focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all outline-none text-sm leading-relaxed resize-none shadow-sm text-slate-900"
                   value={formData.chiefComplaint}
-                  onChange={e => setFormData({...formData, chiefComplaint: e.target.value})}
+                  onChange={e => setFormData({ ...formData, chiefComplaint: e.target.value })}
                 />
               </div>
             </section>
@@ -138,10 +140,10 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-blue-600" /> Security Review
                 </h3>
-                
-                <ConsentBanner 
+
+                <ConsentBanner
                   isChecked={formData.consent}
-                  onToggle={() => setFormData({...formData, consent: !formData.consent})}
+                  onToggle={() => setFormData({ ...formData, consent: !formData.consent })}
                 />
 
                 {error && (
@@ -151,7 +153,7 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
                 )}
 
                 <div className="space-y-4">
-                  <button 
+                  <button
                     disabled={loading || !formData.specialty || !formData.consent}
                     className="w-full bg-blue-600 text-white py-5 rounded-2xl font-bold text-sm shadow-xl shadow-blue-200 hover:bg-blue-700 disabled:bg-slate-100 disabled:shadow-none disabled:text-slate-400 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
                   >
@@ -171,13 +173,13 @@ export default function IntakeForm({ onSuccess }: IntakeFormProps) {
               </div>
 
               <div className="bg-slate-50 border border-slate-100 p-6 rounded-2xl">
-                 <div className="flex items-center gap-3 mb-2">
-                    <ShieldCheck className="h-4 w-4 text-green-600" />
-                    <span className="text-xs font-bold text-slate-900">Encrypted Infrastructure</span>
-                 </div>
-                 <p className="text-[10px] text-slate-500 leading-normal">
-                   This platform utilizes industry-standard PHI isolation protocols. All medical data is stored on specialized encrypted instances.
-                 </p>
+                <div className="flex items-center gap-3 mb-2">
+                  <ShieldCheck className="h-4 w-4 text-green-600" />
+                  <span className="text-xs font-bold text-slate-900">Encrypted Infrastructure</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  This platform utilizes industry-standard PHI isolation protocols. All medical data is stored on specialized encrypted instances.
+                </p>
               </div>
             </div>
           </div>

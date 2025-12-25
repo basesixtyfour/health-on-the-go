@@ -9,13 +9,25 @@ export default function PaymentSuccessPage({
 }) {
   const consultationId = searchParams.id;
 
+  if (!consultationId) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="bg-white p-8 rounded-2xl shadow-xl text-center">
+          <h1 className="text-xl font-bold text-red-600 mb-2">Invalid Session</h1>
+          <p className="text-slate-600">No consultation ID provided.</p>
+          <Link href="/dashboard" className="text-blue-600 hover:underline mt-4 block">Return to Dashboard</Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
       <div className="max-w-md w-full text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto shadow-inner shadow-green-200">
           <CheckCircle2 className="h-12 w-12 text-green-600" />
         </div>
-        
+
         <div className="space-y-2">
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Payment Verified</h1>
           <p className="text-slate-500 font-medium">Your consultation link is now active.</p>
@@ -26,8 +38,8 @@ export default function PaymentSuccessPage({
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Consultation ID</span>
             <span className="text-sm font-mono font-bold text-slate-900">{consultationId}</span>
           </div>
-          
-          <Link 
+
+          <Link
             href={`/consultation/${consultationId}`}
             className="w-full bg-slate-900 text-white py-5 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-black transition-all shadow-lg shadow-slate-300"
           >
