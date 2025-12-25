@@ -4,39 +4,31 @@ import React, { useState } from 'react';
 import { 
   Stethoscope, 
   ShieldCheck, 
-  ChevronRight, 
   Activity, 
-  Lock, 
-  Mail,
+  Lock,
   Loader2,
   Globe
 } from 'lucide-react';
-
-/**
- * ARCHITECTURE NOTE:
- * This page acts as the root entry point (/). 
- * It uses better-auth for secure authentication. 
- * In a production Next.js environment, you would use the 
- * authClient from your lib/auth-client.ts file.
- */
+import { authClient } from "@/lib/auth-client";
 
 export default function RootPage() {
-  const [isLoading, setIsLoading] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSocialLogin = async (provider: 'google') => {
-    setIsLoading(provider);
-    // In production: await authClient.signIn.social({ provider });
-    console.log(`Initiating ${provider} login...`);
-    setTimeout(() => setIsLoading(null), 2000);
-  };
-
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading('email');
-    // In production: await authClient.signIn.email({ email });
-    console.log(`Initiating OTP for ${email}...`);
-    setTimeout(() => setIsLoading(null), 2000);
+  const handleGoogleLogin = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      await authClient.signIn.social({
+        provider: 'google',
+        callbackURL: '/dashboard', // Redirect after successful login
+      });
+    } catch (err) {
+      console.error('Google sign-in error:', err);
+      setError('Failed to sign in. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -71,13 +63,20 @@ export default function RootPage() {
           {/* Auth Card */}
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/50 space-y-6">
             
-            {/* Social Provider */}
+            {/* Error Message */}
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-100 rounded-2xl">
+                <p className="text-sm text-red-600 font-medium text-center">{error}</p>
+              </div>
+            )}
+
+            {/* Google Sign In Button */}
             <button
-              onClick={() => handleSocialLogin('google')}
-              disabled={!!isLoading}
-              className="w-full flex items-center justify-center gap-3 py-4 border border-slate-200 rounded-2xl font-bold text-sm text-slate-700 hover:bg-slate-50 transition-all active:scale-[0.98] disabled:opacity-50"
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-3 py-4 border border-slate-200 rounded-2xl font-bold text-sm text-slate-700 hover:bg-slate-50 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading === 'google' ? (
+              {isLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <>
@@ -104,44 +103,9 @@ export default function RootPage() {
               )}
             </button>
 
-            <div className="relative flex items-center gap-4 py-2">
-              <div className="flex-1 h-px bg-slate-100" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Or Secure Email</span>
-              <div className="flex-1 h-px bg-slate-100" />
-            </div>
-
-            {/* Email OTP Flow */}
-            <form onSubmit={handleEmailLogin} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                  Professional Identity
-                </label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    required
-                    placeholder="name@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full p-4 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-600 focus:ring-4 focus:ring-blue-600/5 transition-all outline-none text-sm font-medium"
-                  />
-                  <Mail className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
-                </div>
-              </div>
-              <button
-                disabled={!!isLoading}
-                className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] shadow-lg shadow-slate-200"
-              >
-                {isLoading === 'email' ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    Sign In with Magic Link
-                    <ChevronRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
-            </form>
+            <p className="text-xs text-slate-500 text-center leading-relaxed">
+              Secure authentication powered by Google. Your credentials are never stored on our servers.
+            </p>
           </div>
 
           {/* Footer Badges */}
