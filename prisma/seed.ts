@@ -7,7 +7,7 @@ import {
   ConsultationStatus,
   PaymentStatus,
 } from "../app/generated/prisma/client";
-import { prisma } from "../prisma";
+import { prisma } from "../lib/prisma";
 
 if (!prisma) {
   console.error("ERROR: Prisma client instance is not available.");

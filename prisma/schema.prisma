@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  output   = "../app/generated/prisma"  
 }
 
 datasource db {
@@ -136,7 +136,7 @@ model Consultation {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
-  patient       User           @relation("PatientConsultations", fields: [patientId], references: [id], onDelete: Cascade)
+  patient       User           @relation("PatientConsultations", fields: [patientId], references: [id], onDelete: Restrict)
   doctor        User?          @relation("DoctorConsultations", fields: [doctorId], references: [id], onDelete: SetNull)
   patientIntake PatientIntake?
   payments      Payment[]
