@@ -19,33 +19,57 @@ import { StepHeader } from '@/components/ui/StepHeader';
 import { SpecialtyCard } from '@/components/intake/SpecialtyCard';
 import { ConsentBanner } from '@/components/intake/ConsentBanner';
 
-interface IntakeFormProps {
-  onSuccess?: (consultationId: string) => void;
+export interface IntakeFormData {
+  specialty: string;
+  nameOrAlias: string;
+  ageRange: string;
+  chiefComplaint: string;
+  consent: boolean;
 }
 
-export default function IntakeForm({ onSuccess }: IntakeFormProps) {
-  const [loading, setLoading] = useState(false);
+interface IntakeFormProps {
+  onSuccess?: (consultationId: string) => void;
+  // If provided, this overrides the internal submission logic
+  onSubmit?: (data: IntakeFormData) => Promise<void>;
+  defaultSpecialty?: string;
+  isSubmitting?: boolean;
+}
+
+export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSubmitting = false }: IntakeFormProps) {
+  const [internalLoading, setInternalLoading] = useState(false);
   const [error, setError] = useState("");
-  const [formData, setFormData] = useState({
-    specialty: '',
+  const [formData, setFormData] = useState<IntakeFormData>({
+    specialty: defaultSpecialty || '',
     nameOrAlias: '',
     ageRange: '',
     chiefComplaint: '',
     consent: false
   });
 
+  // Update local state if defaultSpecialty changes
+  React.useEffect(() => {
+    if (defaultSpecialty) {
+      setFormData(prev => ({ ...prev, specialty: defaultSpecialty }));
+    }
+  }, [defaultSpecialty]);
+
+  const loading = isSubmitting || internalLoading;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
 
-    // TODO: Replace with actual Server Action
-    // const result = await submitIntake(formData);
+    if (onSubmit) {
+      await onSubmit(formData);
+      return;
+    }
 
+    setInternalLoading(true);
+    // TODO: Replace with actual Server Action
     setTimeout(() => {
       // Secure ID generation
       if (onSuccess) onSuccess(`c_${crypto.randomUUID()}`);
-      setLoading(false);
+      setInternalLoading(false);
     }, 1500);
   };
 

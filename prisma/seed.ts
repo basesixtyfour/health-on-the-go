@@ -1,6 +1,4 @@
-import * as dotenv from "dotenv";
-
-dotenv.config();
+import "dotenv/config";
 
 import {
   UserRole,
@@ -183,25 +181,25 @@ async function createDoctorProfiles(doctors: { id: string; name: string }[]) {
   const profiles = [
     {
       doctorId: doctors[0].id,
-      specialties: ["General Practice", "Pediatrics"],
+      specialties: ["GENERAL", "PEDIATRICS"],
       licenseId: "MD-2024-001",
       timezone: "America/New_York",
     },
     {
       doctorId: doctors[1].id,
-      specialties: ["Cardiology", "General Practice"],
+      specialties: ["CARDIOLOGY", "GENERAL"],
       licenseId: "MD-2024-002",
       timezone: "America/Los_Angeles",
     },
     {
       doctorId: doctors[2].id,
-      specialties: ["Dermatology"],
+      specialties: ["DERMATOLOGY"],
       licenseId: "MD-2024-003",
       timezone: "America/Chicago",
     },
     {
       doctorId: doctors[3].id,
-      specialties: ["Neurology", "Psychiatry"],
+      specialties: ["NEUROLOGY", "PSYCHIATRY"],
       licenseId: "MD-2024-004",
       timezone: "America/Denver",
     },
@@ -211,7 +209,11 @@ async function createDoctorProfiles(doctors: { id: string; name: string }[]) {
     profiles.map((profile) =>
       prisma.doctorProfile.upsert({
         where: { doctorId: profile.doctorId },
-        update: {},
+        update: {
+          specialties: profile.specialties,
+          licenseId: profile.licenseId,
+          timezone: profile.timezone,
+        },
         create: profile,
       })
     )
@@ -239,7 +241,7 @@ async function createConsultations(
         id: generateCUID(),
         patientId: patients[0].id,
         doctorId: doctors[0].id,
-        specialty: "General Practice",
+        specialty: "GENERAL",
         status: ConsultationStatus.COMPLETED,
         scheduledStartAt: dates.scheduledStartAt,
         startedAt: dates.startedAt,
@@ -252,7 +254,7 @@ async function createConsultations(
         id: generateCUID(),
         patientId: patients[1].id,
         doctorId: doctors[1].id,
-        specialty: "Cardiology",
+        specialty: "CARDIOLOGY",
         status: ConsultationStatus.COMPLETED,
         scheduledStartAt: dates.scheduledStartAt,
         startedAt: dates.startedAt,
@@ -264,7 +266,7 @@ async function createConsultations(
       id: generateCUID(),
       patientId: patients[2].id,
       doctorId: doctors[2].id,
-      specialty: "Dermatology",
+      specialty: "DERMATOLOGY",
       status: ConsultationStatus.PAID,
       scheduledStartAt: randomDate(now, oneWeekLater),
     },
@@ -282,7 +284,7 @@ async function createConsultations(
       id: generateCUID(),
       patientId: patients[4].id,
       doctorId: null,
-      specialty: "Pediatrics",
+      specialty: "PEDIATRICS",
       status: ConsultationStatus.CREATED,
     },
     // In call
@@ -290,7 +292,7 @@ async function createConsultations(
       id: generateCUID(),
       patientId: patients[0].id,
       doctorId: doctors[3].id,
-      specialty: "Neurology",
+      specialty: "NEUROLOGY",
       status: ConsultationStatus.IN_CALL,
       scheduledStartAt: now,
       startedAt: now,

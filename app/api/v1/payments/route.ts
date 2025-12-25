@@ -60,8 +60,24 @@ export async function POST(request: NextRequest) {
                 403
             );
         }
+        // 4. Check for Existing Payments (Idempotency/Duplication)
+        const existingPayment = await prisma.payment.findFirst({
+            where: {
+                consultationId: consultationId,
+                status: { in: ["PENDING", "PAID"] }
+            }
+        });
 
-        // 4. Validate Environment Config
+        if (existingPayment) {
+            return errorResponse(
+                ErrorCodes.CONFLICT,
+                "A payment is already in progress or completed for this consultation",
+                409,
+                { paymentId: existingPayment.id }
+            );
+        }
+
+        // 5. Validate Environment Config
         const locationId = process.env.SQUARE_LOCATION_ID;
         if (!locationId) {
             console.error("Missing SQUARE_LOCATION_ID");
