@@ -38,10 +38,22 @@ export async function createCheckoutSession(consultationId: string) {
      * but TypeScript may incorrectly identify 'checkout' as the legacy Checkout API.
      * We use a type cast to ensure we can access the modern Payment Links method.
      */
+    const locationId = process.env.SQUARE_LOCATION_ID;
+    if (!locationId) {
+      throw new Error("SQUARE_LOCATION_ID is missing. Please check your .env configuration.");
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    if (!baseUrl) {
+      throw new Error("NEXT_PUBLIC_BASE_URL is missing. Please check your .env configuration.");
+    }
+    const redirectUrl = new URL("/checkout/success", baseUrl);
+    redirectUrl.searchParams.set("id", consultationId);
+
     const { result } = await (squareClient as any).checkout.createPaymentLink({
       idempotencyKey: randomUUID(),
       order: {
-        locationId: process.env.SQUARE_LOCATION_ID!,
+        locationId: locationId,
         lineItems: [
           {
             name: `${consultation.specialty} Consultation`,
@@ -54,7 +66,7 @@ export async function createCheckoutSession(consultationId: string) {
         ],
       },
       checkoutOptions: {
-        redirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/checkout/success?id=${consultationId}`,
+        redirectUrl: redirectUrl.toString(),
       }
     });
 
