@@ -22,5 +22,9 @@ export const prisma = isPrismaPostgres
       accelerateUrl: DATABASE_URL,
     })
   : new PrismaClient({
-      adapter: new PrismaPg(new Pool({ connectionString: DATABASE_URL })),
+      adapter: new PrismaPg(
+        new Pool({
+          connectionString: DATABASE_URL,
+        })
+      ),
     });

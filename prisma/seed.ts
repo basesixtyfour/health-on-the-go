@@ -1,4 +1,9 @@
-import { PrismaClient, UserRole, ConsultationStatus, PaymentStatus } from "../app/generated/prisma/client";
+import {
+  PrismaClient,
+  UserRole,
+  ConsultationStatus,
+  PaymentStatus,
+} from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import * as dotenv from "dotenv";
@@ -17,11 +22,15 @@ const isPrismaPostgres = DATABASE_URL.startsWith("prisma+postgres://");
 
 const prisma = isPrismaPostgres
   ? new PrismaClient({
-    accelerateUrl: DATABASE_URL,
-  })
+      accelerateUrl: DATABASE_URL,
+    })
   : new PrismaClient({
-    adapter: new PrismaPg(new Pool({ connectionString: DATABASE_URL })),
-  });
+      adapter: new PrismaPg(
+        new Pool({
+          connectionString: DATABASE_URL,
+        })
+      ),
+    });
 
 // ============================================
 // Test Data Configuration
@@ -47,7 +56,9 @@ function randomItem<T>(arr: T[]): T {
 }
 
 function randomDate(start: Date, end: Date): Date {
-  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+  return new Date(
+    start.getTime() + Math.random() * (end.getTime() - start.getTime())
+  );
 }
 
 function generateCUID(): string {
@@ -495,7 +506,9 @@ async function createAuditEvents(
       consultationId: randomItem(consultations).id,
       eventType: randomItem(eventTypes),
       eventMetadata: { action: "test_seed", iteration: i },
-      ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+      ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(
+        Math.random() * 255
+      )}`,
       userAgent: "Mozilla/5.0 (Test Seed Script)",
     });
   }
