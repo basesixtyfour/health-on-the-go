@@ -25,7 +25,11 @@ export interface MockPrismaClient {
     findUnique: jest.Mock;
     findFirst: jest.Mock;
     findMany: jest.Mock;
+    update: jest.Mock;
     count: jest.Mock;
+  };
+  doctorProfile: {
+    update: jest.Mock;
   };
   $transaction: jest.Mock;
 }
@@ -52,7 +56,11 @@ export const prismaMock: MockPrismaClient = {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
     findMany: jest.fn(),
+    update: jest.fn(),
     count: jest.fn(),
+  },
+  doctorProfile: {
+    update: jest.fn(),
   },
   $transaction: jest.fn(),
 };
@@ -70,6 +78,7 @@ export function resetPrismaMock() {
   Object.values(prismaMock.patientIntake).forEach(mock => mock.mockReset());
   Object.values(prismaMock.auditEvent).forEach(mock => mock.mockReset());
   Object.values(prismaMock.user).forEach(mock => mock.mockReset());
+  Object.values(prismaMock.doctorProfile).forEach(mock => mock.mockReset());
   prismaMock.$transaction.mockReset();
 }
 
