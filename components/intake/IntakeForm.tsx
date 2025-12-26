@@ -70,8 +70,15 @@ export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecial
     }
 
     setInternalLoading(true);
+    // Fallback handler for standalone form usage
     setTimeout(() => {
-      if (onSuccess) onSuccess(`c_${crypto.randomUUID()}`);
+      if (process.env.NODE_ENV === 'development') {
+        // Only use fake ID in development for testing purposes
+        if (onSuccess) onSuccess(`c_${crypto.randomUUID()}`);
+      } else {
+        // In production, warn that onSubmit should be provided
+        console.warn('[IntakeForm] Neither onSubmit nor onSuccess handler provided - form submission will have no effect in production');
+      }
       setInternalLoading(false);
     }, 1500);
   };

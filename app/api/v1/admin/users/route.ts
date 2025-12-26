@@ -128,14 +128,24 @@ export async function PATCH(request: NextRequest) {
             // Handle doctor profile updates
             const targetRole = role || existingUser.role;
             if (targetRole === 'DOCTOR') {
-                // Determine what specialties to set
-                let newSpecialties: string[] = [];
+                // Check if specialties was explicitly provided in the request
+                const specialtiesProvided = 'specialties' in body;
+                const specialtyProvided = 'specialty' in body && !!specialty;
 
-                if (specialties && Array.isArray(specialties)) {
-                    // If specialties array is provided, use it directly
+                // Determine what specialties to set
+                let newSpecialties: string[] | null = null;
+
+                if (specialtiesProvided) {
+                    // specialties was explicitly provided
+                    if (!Array.isArray(specialties)) {
+                        throw { validationError: "specialties must be an array" };
+                    }
+                    if (specialties.length === 0) {
+                        throw { validationError: "specialties cannot be empty - doctors must have at least one specialty" };
+                    }
                     newSpecialties = specialties;
-                } else if (specialty) {
-                    // If single specialty provided, add to existing or create new
+                } else if (specialtyProvided) {
+                    // Single specialty provided - add to existing or create new
                     const existingSpecialties = existingUser.doctorProfile?.specialties || [];
                     if (!existingSpecialties.includes(specialty)) {
                         newSpecialties = [...existingSpecialties, specialty];
@@ -144,17 +154,19 @@ export async function PATCH(request: NextRequest) {
                     }
                 }
 
-                if (newSpecialties.length > 0 || !existingUser.doctorProfile) {
+                // Only update/create profile if we have specialties to set OR if profile doesn't exist
+                if (newSpecialties !== null || !existingUser.doctorProfile) {
                     await tx.doctorProfile.upsert({
                         where: { doctorId: userId },
                         create: {
                             doctorId: userId,
-                            specialties: newSpecialties.length > 0 ? newSpecialties : ['GENERAL'],
+                            // Only use default if no specialties were explicitly provided
+                            specialties: newSpecialties ?? ['GENERAL'],
                             timezone: "UTC"
                         },
-                        update: {
+                        update: newSpecialties ? {
                             specialties: newSpecialties
-                        }
+                        } : {}
                     });
                 }
             }
@@ -179,6 +191,9 @@ export async function PATCH(request: NextRequest) {
         return successResponse(result);
     } catch (error) {
         console.error("Admin Update User Error:", error);
+        if ((error as any).validationError) {
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, (error as any).validationError, 400);
+        }
         if ((error as any).code === 'P2025') {
             return errorResponse(ErrorCodes.NOT_FOUND, "User not found", 404);
         }
