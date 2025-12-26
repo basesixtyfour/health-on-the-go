@@ -132,15 +132,24 @@ export async function PATCH(request: NextRequest) {
       dpData.timezone = dp.timezone;
     }
 
-    const updatedDoctorProfile = await prisma.doctorProfile.update({
-      where: { doctorId: user.id },
-      data: dpData,
-    });
+    try {
+      const updatedDoctorProfile = await prisma.doctorProfile.update({
+        where: { doctorId: user.id },
+        data: dpData,
+      });
 
-    return successResponse({
-      ...existing,
-      doctorProfile: updatedDoctorProfile,
-    });
+      return successResponse({
+        ...existing,
+        doctorProfile: updatedDoctorProfile,
+      });
+    } catch (error) {
+      console.error("Error updating doctor profile:", error);
+      return errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        "Failed to update doctor profile",
+        500
+      );
+    }
   }
 
   const data: { name?: string; image?: string | null } = {};
