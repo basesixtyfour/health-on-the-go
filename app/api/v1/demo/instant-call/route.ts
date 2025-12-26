@@ -104,18 +104,13 @@ export async function POST(_request: NextRequest) {
     const patientId = demoPatient.id;
     const doctorId = demoDoctor.id;
 
-    const reuseCutoff = new Date(Date.now() - ROOM_EXPIRY_MINUTES * 60 * 1000);
-
-    // Only reuse consultations within room expiry. Daily rooms do not exist beyond ROOM_EXPIRY_MINUTES.
-    const reusableConsultation = await prisma.consultation.findFirst({
+    // Check for existing active consultation between demo doctor and patient
+    const existingConsultation = await prisma.consultation.findFirst({
       where: {
         patientId,
         doctorId,
         status: {
           in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
-        },
-        createdAt: {
-          gte: reuseCutoff,
         },
       },
       include: {
@@ -126,14 +121,16 @@ export async function POST(_request: NextRequest) {
       },
     });
 
-    if (reusableConsultation) {
+    // If an active consultation exists, return it instead of creating a new one
+    if (existingConsultation) {
+      // Create audit event for rejoining
       await prisma.auditEvent.create({
         data: {
           actorUserId: user.id,
-          consultationId: reusableConsultation.id,
+          consultationId: existingConsultation.id,
           eventType: "DEMO_CALL_REJOINED",
           eventMetadata: {
-            roomName: reusableConsultation.videoSession?.roomName,
+            roomName: existingConsultation.videoSession?.roomName,
             demo: true,
             userEmail,
           },
@@ -141,79 +138,20 @@ export async function POST(_request: NextRequest) {
       });
 
       return successResponse({
-        consultationId: reusableConsultation.id,
+        consultationId: existingConsultation.id,
         message:
           "🎬 Joining existing demo call! Both participants will be in the same room.",
         isExisting: true,
       });
     }
 
-    // Best-effort cleanup of the most recent stale "active" consultation (room already expired).
-    const staleConsultation = await prisma.consultation.findFirst({
-      where: {
-        patientId,
-        doctorId,
-        status: {
-          in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
-        },
-        createdAt: {
-          lt: reuseCutoff,
-        },
-      },
-      include: {
-        videoSession: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-    if (staleConsultation) {
-      const staleRoomName = staleConsultation.videoSession?.roomName;
-
-      if (staleRoomName) {
-        try {
-          await deleteRoom(staleRoomName);
-        } catch (cleanupErr) {
-          console.error(
-            "Failed to delete expired Daily room for demo consultation:",
-            cleanupErr
-          );
-        }
-      }
-
-      await prisma.$transaction(async (tx) => {
-        await tx.consultation.update({
-          where: { id: staleConsultation.id },
-          data: {
-            status: ConsultationStatus.EXPIRED,
-            endedAt: new Date(),
-          },
-        });
-
-        await tx.auditEvent.create({
-          data: {
-            actorUserId: user.id,
-            consultationId: staleConsultation.id,
-            eventType: "DEMO_CALL_EXPIRED",
-            eventMetadata: {
-              roomName: staleRoomName,
-              demo: true,
-            },
-          },
-        });
-      });
-    }
-
     // Create Daily room first (external API call - can't be in transaction)
     const roomName = `demo_${Date.now()}`;
-    const room = await createRoom(roomName, ROOM_EXPIRY_MINUTES);
+    const room = await createRoom(roomName, TOKEN_EXPIRY_MINUTES);
 
     try {
       // Wrap all DB operations in a transaction for atomicity
       const consultation = await prisma.$transaction(async (tx) => {
-        const now = new Date();
-
         // Create consultation with PAID status (bypassing payment)
         const newConsultation = await tx.consultation.create({
           data: {
@@ -221,7 +159,7 @@ export async function POST(_request: NextRequest) {
             doctorId,
             specialty: "GENERAL",
             status: ConsultationStatus.PAID,
-            scheduledStartAt: now,
+            scheduledStartAt: new Date(),
           },
         });
 
@@ -232,7 +170,7 @@ export async function POST(_request: NextRequest) {
             nameOrAlias: "Demo Patient",
             ageRange: "18-39",
             chiefComplaint: "Hackathon demonstration",
-            consentAcceptedAt: now,
+            consentAcceptedAt: new Date(),
           },
         });
 
@@ -251,7 +189,7 @@ export async function POST(_request: NextRequest) {
           where: { id: newConsultation.id },
           data: {
             status: ConsultationStatus.IN_CALL,
-            startedAt: now,
+            startedAt: new Date(),
           },
         });
 
