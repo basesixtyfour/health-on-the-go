@@ -87,7 +87,7 @@ export function BookingWizard() {
             case "DOCTOR":
                 return <DoctorSelection specialty={selectedSpecialty!} onSelect={handleDoctorSelect} onBack={() => setStep("SPECIALTY")} />;
             case "TIME":
-                return <TimeSlotSelection doctorId={selectedDoctorId!} onSelect={handleTimeSelect} onBack={() => setStep("DOCTOR")} />;
+                return <TimeSlotSelection specialty={selectedSpecialty!} doctorId={selectedDoctorId!} onSelect={handleTimeSelect} onBack={() => setStep("DOCTOR")} />;
             case "INTAKE":
                 return (
                     <IntakeForm
