@@ -6,8 +6,8 @@ export const SPECIALTIES = [
 ];
 
 export const AGE_RANGES = [
-  "0-17 years", 
-  "18-39 years", 
-  "40-64 years", 
-  "65+ years"
+  "0-17",
+  "18-39",
+  "40-64",
+  "65+"
 ];

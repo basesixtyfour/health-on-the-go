@@ -1,5 +1,5 @@
 /**
- * Valid varieties for consultations
+ * Valid Specialities for consultations
  */
 export const VALID_SPECIALTIES = [
     'GENERAL',
@@ -15,7 +15,7 @@ export type Specialty = typeof VALID_SPECIALTIES[number];
 /**
  * Valid age ranges for patient intake
  */
-export const VALID_AGE_RANGES = ['18-39', '40-64', '65+'] as const;
+export const VALID_AGE_RANGES = ['0-17', '18-39', '40-64', '65+'] as const;
 
 export type AgeRange = typeof VALID_AGE_RANGES[number];
 
