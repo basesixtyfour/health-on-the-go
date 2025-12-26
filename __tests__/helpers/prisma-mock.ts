@@ -34,6 +34,7 @@ export interface MockPrismaClient {
     findMany: jest.Mock;
     update: jest.Mock;
     count: jest.Mock;
+    upsert: jest.Mock;
   };
   payment: {
     create: jest.Mock;
@@ -48,6 +49,7 @@ export interface MockPrismaClient {
     update: jest.Mock;
   };
   $transaction: jest.Mock;
+  $queryRaw: jest.Mock;
 }
 
 // Create a deep mock of PrismaClient
@@ -75,13 +77,13 @@ export const prismaMock: MockPrismaClient = {
     update: jest.fn(),
     count: jest.fn(),
   },
-
   doctorProfile: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
     count: jest.fn(),
+    upsert: jest.fn(),
   },
   payment: {
     create: jest.fn(),
@@ -96,35 +98,37 @@ export const prismaMock: MockPrismaClient = {
     update: jest.fn(),
   },
   $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
 };
 
-// Module mock - this will be used when the actual route is implemented
+// Mock the Prisma module
 jest.mock('@/lib/prisma', () => ({
   prisma: prismaMock,
 }));
 
 /**
- * Reset all mocks between tests
+ * Reset all mocks to their initial state
  */
 export function resetPrismaMock() {
-  Object.values(prismaMock.consultation).forEach(mock => mock.mockReset());
-  Object.values(prismaMock.patientIntake).forEach(mock => mock.mockReset());
-  Object.values(prismaMock.auditEvent).forEach(mock => mock.mockReset());
-  Object.values(prismaMock.user).forEach(mock => mock.mockReset());
-  Object.values(prismaMock.doctorProfile).forEach(mock => mock.mockReset());
-  Object.values(prismaMock.payment).forEach(mock => mock.mockReset());
-  Object.values(prismaMock.videoSession).forEach(mock => mock.mockReset());
-  prismaMock.$transaction.mockReset();
+  Object.values(prismaMock).forEach((mockObj) => {
+    if (typeof mockObj === 'object' && mockObj !== null) {
+      Object.values(mockObj).forEach((mockFn) => {
+        if (jest.isMockFunction(mockFn)) {
+          mockFn.mockReset();
+        }
+      });
+    }
+  });
 }
 
 /**
- * Setup common Prisma mock behaviors
+ * Setup common mock responses
  */
 export function setupPrismaMock() {
-  // Default mock for $transaction
+  // Setup default $transaction behavior
   prismaMock.$transaction.mockImplementation(async (callback: any) => {
     if (typeof callback === 'function') {
-      return callback(prismaMock);
+      return await callback(prismaMock);
     }
     return Promise.all(callback);
   });
