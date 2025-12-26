@@ -136,6 +136,30 @@ export function createMockPatientIntake(consultationId: string, overrides: Parti
 }
 
 /**
+ * Create a mock video session
+ */
+export function createMockVideoSession(consultationId: string, overrides: Partial<{
+  id: string;
+  provider: string;
+  roomName: string;
+  roomUrl: string;
+  createdAt: Date;
+  endedAt: Date | null;
+}> = {}) {
+  const roomName = overrides.roomName || `room_${consultationId}`;
+  return {
+    id: generateId('video'),
+    consultationId,
+    provider: 'DAILY',
+    roomName,
+    roomUrl: `https://test.daily.co/${roomName}`,
+    createdAt: new Date(),
+    endedAt: null,
+    ...overrides,
+  };
+}
+
+/**
  * Valid specialties for testing
  */
 export const VALID_SPECIALTIES = [

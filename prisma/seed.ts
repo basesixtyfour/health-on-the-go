@@ -17,14 +17,14 @@ if (!prisma) {
 // ============================================
 
 const SPECIALTIES = [
-  "General Practice",
-  "Cardiology",
-  "Dermatology",
-  "Pediatrics",
-  "Orthopedics",
-  "Neurology",
-  "Psychiatry",
-  "Oncology",
+  "GENERAL",
+  "CARDIOLOGY",
+  "DERMATOLOGY",
+  "PEDIATRICS",
+  "ORTHOPEDICS",
+  "NEUROLOGY",
+  "PSYCHIATRY",
+  "ONCOLOGY",
 ];
 
 // ============================================
@@ -547,6 +547,20 @@ async function main() {
   console.log("━".repeat(50));
 
   try {
+    // Clean up existing data (in reverse dependency order)
+    console.log("🧹 Cleaning up existing data...");
+    await prisma.auditEvent.deleteMany();
+    await prisma.videoSession.deleteMany();
+    await prisma.payment.deleteMany();
+    await prisma.patientIntake.deleteMany();
+    await prisma.consultation.deleteMany();
+    await prisma.doctorProfile.deleteMany();
+    await prisma.account.deleteMany();
+    await prisma.session.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.verification.deleteMany();
+    console.log("   ✅ Cleanup complete\n");
+
     // Create users first
     const users = await createUsers();
 

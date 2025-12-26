@@ -41,6 +41,12 @@ export interface MockPrismaClient {
     findFirst: jest.Mock;
     update: jest.Mock;
   };
+  videoSession: {
+    create: jest.Mock;
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    update: jest.Mock;
+  };
   $transaction: jest.Mock;
 }
 
@@ -83,7 +89,12 @@ export const prismaMock: MockPrismaClient = {
     findFirst: jest.fn(),
     update: jest.fn(),
   },
-
+  videoSession: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 
@@ -101,8 +112,8 @@ export function resetPrismaMock() {
   Object.values(prismaMock.auditEvent).forEach(mock => mock.mockReset());
   Object.values(prismaMock.user).forEach(mock => mock.mockReset());
   Object.values(prismaMock.doctorProfile).forEach(mock => mock.mockReset());
-
   Object.values(prismaMock.payment).forEach(mock => mock.mockReset());
+  Object.values(prismaMock.videoSession).forEach(mock => mock.mockReset());
   prismaMock.$transaction.mockReset();
 }
 
