@@ -19,12 +19,18 @@ import {
 } from "@/lib/api-utils";
 import { ConsultationStatus } from "@/app/generated/prisma/client";
 
-// Token expiry (in minutes)
-const TOKEN_EXPIRY_MINUTES = 60;
+// Demo room expiry (in minutes). Daily rooms are configured with `exp` and only exist until then.
+const ROOM_EXPIRY_MINUTES = 30;
 
 // Demo accounts from environment variables
 const DEMO_DOCTOR_EMAIL = process.env.DEMO_DOCTOR_EMAIL;
 const DEMO_PATIENT_EMAIL = process.env.DEMO_PATIENT_EMAIL;
+
+function getUserEmail(user: unknown): string | null {
+  if (!user || typeof user !== "object") return null;
+  const email = (user as { email?: unknown }).email;
+  return typeof email === "string" ? email : null;
+}
 
 export async function POST(_request: NextRequest) {
   // Check if demo mode is enabled
@@ -55,10 +61,7 @@ export async function POST(_request: NextRequest) {
 
   try {
     // Allow only demo accounts to trigger demo call creation (prevents accidental prod abuse)
-    const userEmail =
-      typeof (user as unknown as { email?: unknown })?.email === "string"
-        ? (user as unknown as { email: string }).email
-        : null;
+    const userEmail = getUserEmail(user);
 
     if (userEmail !== DEMO_DOCTOR_EMAIL && userEmail !== DEMO_PATIENT_EMAIL) {
       return errorResponse(
@@ -101,13 +104,18 @@ export async function POST(_request: NextRequest) {
     const patientId = demoPatient.id;
     const doctorId = demoDoctor.id;
 
-    // Check for existing active consultation between demo doctor and patient
-    const existingConsultation = await prisma.consultation.findFirst({
+    const reuseCutoff = new Date(Date.now() - ROOM_EXPIRY_MINUTES * 60 * 1000);
+
+    // Only reuse consultations within room expiry. Daily rooms do not exist beyond ROOM_EXPIRY_MINUTES.
+    const reusableConsultation = await prisma.consultation.findFirst({
       where: {
         patientId,
         doctorId,
         status: {
           in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
+        },
+        createdAt: {
+          gte: reuseCutoff,
         },
       },
       include: {
@@ -118,16 +126,14 @@ export async function POST(_request: NextRequest) {
       },
     });
 
-    // If an active consultation exists, return it instead of creating a new one
-    if (existingConsultation) {
-      // Create audit event for rejoining
+    if (reusableConsultation) {
       await prisma.auditEvent.create({
         data: {
           actorUserId: user.id,
-          consultationId: existingConsultation.id,
+          consultationId: reusableConsultation.id,
           eventType: "DEMO_CALL_REJOINED",
           eventMetadata: {
-            roomName: existingConsultation.videoSession?.roomName,
+            roomName: reusableConsultation.videoSession?.roomName,
             demo: true,
             userEmail,
           },
@@ -135,20 +141,79 @@ export async function POST(_request: NextRequest) {
       });
 
       return successResponse({
-        consultationId: existingConsultation.id,
+        consultationId: reusableConsultation.id,
         message:
           "🎬 Joining existing demo call! Both participants will be in the same room.",
         isExisting: true,
       });
     }
 
+    // Best-effort cleanup of the most recent stale "active" consultation (room already expired).
+    const staleConsultation = await prisma.consultation.findFirst({
+      where: {
+        patientId,
+        doctorId,
+        status: {
+          in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
+        },
+        createdAt: {
+          lt: reuseCutoff,
+        },
+      },
+      include: {
+        videoSession: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (staleConsultation) {
+      const staleRoomName = staleConsultation.videoSession?.roomName;
+
+      if (staleRoomName) {
+        try {
+          await deleteRoom(staleRoomName);
+        } catch (cleanupErr) {
+          console.error(
+            "Failed to delete expired Daily room for demo consultation:",
+            cleanupErr
+          );
+        }
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.consultation.update({
+          where: { id: staleConsultation.id },
+          data: {
+            status: ConsultationStatus.EXPIRED,
+            endedAt: new Date(),
+          },
+        });
+
+        await tx.auditEvent.create({
+          data: {
+            actorUserId: user.id,
+            consultationId: staleConsultation.id,
+            eventType: "DEMO_CALL_EXPIRED",
+            eventMetadata: {
+              roomName: staleRoomName,
+              demo: true,
+            },
+          },
+        });
+      });
+    }
+
     // Create Daily room first (external API call - can't be in transaction)
     const roomName = `demo_${Date.now()}`;
-    const room = await createRoom(roomName, TOKEN_EXPIRY_MINUTES);
+    const room = await createRoom(roomName, ROOM_EXPIRY_MINUTES);
 
     try {
       // Wrap all DB operations in a transaction for atomicity
       const consultation = await prisma.$transaction(async (tx) => {
+        const now = new Date();
+
         // Create consultation with PAID status (bypassing payment)
         const newConsultation = await tx.consultation.create({
           data: {
@@ -156,7 +221,7 @@ export async function POST(_request: NextRequest) {
             doctorId,
             specialty: "GENERAL",
             status: ConsultationStatus.PAID,
-            scheduledStartAt: new Date(),
+            scheduledStartAt: now,
           },
         });
 
@@ -167,7 +232,7 @@ export async function POST(_request: NextRequest) {
             nameOrAlias: "Demo Patient",
             ageRange: "18-39",
             chiefComplaint: "Hackathon demonstration",
-            consentAcceptedAt: new Date(),
+            consentAcceptedAt: now,
           },
         });
 
@@ -186,7 +251,7 @@ export async function POST(_request: NextRequest) {
           where: { id: newConsultation.id },
           data: {
             status: ConsultationStatus.IN_CALL,
-            startedAt: new Date(),
+            startedAt: now,
           },
         });
 
