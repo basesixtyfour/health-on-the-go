@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         redirectUrl.searchParams.set("id", consultationId);
 
         // 6. Call Square SDK
-        const result = await squareClient.checkoutApi.createPaymentLink({
+        const result = await squareClient.checkout.paymentLinks.create({
             idempotencyKey: randomUUID(),
             order: {
                 locationId: locationId,
@@ -157,8 +157,9 @@ export async function POST(request: NextRequest) {
         console.error("Checkout Creation Error:", error);
         return errorResponse(
             ErrorCodes.INTERNAL_ERROR,
-            "Failed to initialize payment gateway",
-            500
+            `Failed to initialize payment gateway: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            500,
+            { originalError: error instanceof Error ? error.stack : error }
         );
     }
 }
