@@ -2,6 +2,8 @@ import { Activity, AlertCircle, Calendar, Users, Settings, FileText } from "luci
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/dashboard/doctor/StatCard";
+import { DoctorVideoSessionCard } from "@/components/dashboard/doctor/DoctorVideoSessionCard";
+import { DemoCallButton } from "@/components/demo/DemoCallButton";
 import { requireAuth } from "@/lib/api-utils";
 import { redirect } from "next/navigation";
 import { UserRole } from "@/app/generated/prisma/client";
@@ -103,6 +105,14 @@ export default async function DoctorDashboard() {
                     description="Completed sessions"
                     icon={Activity}
                 />
+            </div>
+
+            {/* Active Video Sessions Section */}
+            <div className="grid gap-4 md:grid-cols-2">
+                <DoctorVideoSessionCard userId={session.user.id} />
+                
+                {/* Demo Mode Button - Only for hackathon demonstrations */}
+                {process.env.DEMO_MODE === 'true' && <DemoCallButton />}
             </div>
 
             {/* Navigation Quick Links (Optional, but good for "My Patients", "Consultations" etc) */}
