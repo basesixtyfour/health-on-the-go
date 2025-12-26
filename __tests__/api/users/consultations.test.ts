@@ -11,7 +11,7 @@ import { prismaMock, resetPrismaMock, setupPrismaMock } from '../../helpers/pris
 
 // Mock auth module
 const mockGetSession = jest.fn();
-jest.mock('@/auth', () => ({
+jest.mock('@/lib/auth', () => ({
   auth: {
     api: {
       getSession: (...args: unknown[]) => mockGetSession(...args),
@@ -74,7 +74,7 @@ describe('GET /api/v1/users/me/consultations', () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.data).toHaveLength(2);
-      
+
       // SECURITY: Verify query is filtered by patientId to prevent unauthorized access
       expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -130,7 +130,7 @@ describe('GET /api/v1/users/me/consultations', () => {
       const body = await response.json();
       expect(body.data).toHaveLength(2);
       expect(body.data[0].doctorId).toBe(doctor.id);
-      
+
       // SECURITY: Verify query is filtered by doctorId to prevent unauthorized access
       expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -169,7 +169,7 @@ describe('GET /api/v1/users/me/consultations', () => {
       const body = await response.json();
       expect(body.data).toHaveLength(1);
       expect(body.data[0].status).toBe(ConsultationStatus.COMPLETED);
-      
+
       // SECURITY: Verify query includes both patientId filter AND status filter
       expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -286,7 +286,7 @@ describe('GET /api/v1/users/me/consultations', () => {
       expect(body.data).toHaveLength(5);
       expect(body.pagination.limit).toBe(5);
       expect(body.pagination.total).toBe(20);
-      
+
       // SECURITY: Verify pagination doesn't bypass authorization filter
       expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

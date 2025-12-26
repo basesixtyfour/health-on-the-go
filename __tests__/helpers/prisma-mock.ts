@@ -66,7 +66,7 @@ export const prismaMock: MockPrismaClient = {
 };
 
 // Module mock - this will be used when the actual route is implemented
-jest.mock('@/prisma', () => ({
+jest.mock('@/lib/prisma', () => ({
   prisma: prismaMock,
 }));
 
