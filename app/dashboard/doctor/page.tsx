@@ -1,19 +1,54 @@
 import { Activity, AlertCircle, Calendar, Users, Settings, FileText } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { QueueCard } from "@/components/dashboard/doctor/QueueCard";
-import { ScheduleOverview } from "@/components/dashboard/doctor/ScheduleOverview";
 import { StatCard } from "@/components/dashboard/doctor/StatCard";
 import { requireAuth } from "@/lib/api-utils";
 import { redirect } from "next/navigation";
 import { UserRole } from "@/app/generated/prisma/client";
+import { prisma } from "@/lib/prisma";
 
 export default async function DoctorDashboard() {
     const { session } = await requireAuth();
 
-    if (!session || session.user.role !== "DOCTOR") {
-        redirect("/dashboard");
-    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const doctorId = session!.user.id;
+
+    const [appointmentsToday, pendingConsultations, totalPatients, totalConsultations] = await Promise.all([
+        // Appointments today (IN_CALL or PAID/scheduled)
+        prisma.consultation.count({
+            where: {
+                doctorId: doctorId,
+                scheduledStartAt: {
+                    gte: today,
+                    lt: tomorrow
+                }
+            }
+        }),
+        // Pending consults (PAYMENT_PENDING or PAID but not started)
+        prisma.consultation.count({
+            where: {
+                doctorId: doctorId,
+                status: { in: ["PAYMENT_PENDING", "PAID"] }
+            }
+        }),
+        // Unique patients (approximate count of unique patientIds)
+        prisma.consultation.findMany({
+            where: { doctorId: doctorId },
+            select: { patientId: true },
+            distinct: ['patientId']
+        }).then(res => res.length),
+        // Completed consultations
+        prisma.consultation.count({
+            where: {
+                doctorId: doctorId,
+                status: "COMPLETED"
+            }
+        })
+    ]);
 
     return (
         <div className="space-y-6">
@@ -26,36 +61,31 @@ export default async function DoctorDashboard() {
 
             {/* Main Widgets Section */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {/* Queue - Takes up 1 slot */}
-                <QueueCard />
-
-                {/* Schedule - Takes up 2 slots visually in ScheduleOverview component logic if styled right, 
-            but here we place it in grid. Let's adjust ScheduleOverview to be flexible or specific. 
-            Actually, let's keep it simple: 4 columns.
-            Queue: 1 col, Patients: 1 col, Alerts: 1 col, Status: 1 col?
-            User asked for: Queue, Schedule, Status, Alerts.
-            Let's do:
-            [ Queue ] [ Schedule (2 cols? or 1) ] [ Status ] 
-        */}
-
-                {/* For now, uniform grid. ScheduleOverview header says "col-span-1 md:col-span-2" */}
-                <ScheduleOverview />
-
-                {/* <StatCard
-                    title="Patient Status"
-                    value="Active"
-                    description="System fully operational"
-                    icon={Activity}
-                    status="success"
-                />
-
                 <StatCard
-                    title="Alerts"
-                    value="3 Alerts"
-                    description="Check Alerts Dashboard"
+                    title="Appointments Today"
+                    value={appointmentsToday.toString()}
+                    description="Scheduled for today"
+                    icon={Calendar}
+                />
+                <StatCard
+                    title="Pending Reviews"
+                    value={pendingConsultations.toString()}
+                    description="Requires attention"
                     icon={AlertCircle}
-                    status="warning"
-                /> */}
+                    status={pendingConsultations > 0 ? "warning" : "success"}
+                />
+                <StatCard
+                    title="Total Patients"
+                    value={totalPatients.toString()}
+                    description="All time unique patients"
+                    icon={Users}
+                />
+                <StatCard
+                    title="Consultations"
+                    value={totalConsultations.toString()}
+                    description="Completed sessions"
+                    icon={Activity}
+                />
             </div>
 
             {/* Navigation Quick Links (Optional, but good for "My Patients", "Consultations" etc) */}
