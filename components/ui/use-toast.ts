@@ -1,7 +1,7 @@
 "use client"
 
 // Simplified toast for now
-import { useState, useEffect } from "react"
+import { useState } from "react"
 
 export const useToast = () => {
     const [toasts, setToasts] = useState<any[]>([])

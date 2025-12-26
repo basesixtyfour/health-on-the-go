@@ -56,7 +56,7 @@ export default function AuditPage() {
                 totalPages={totalPages}
                 onPageChange={setPage}
                 columns={[
-                    { header: "Using", accessorKey: "id", cell: (e) => <span className="font-mono text-xs text-muted-foreground">{e.id.slice(-8)}</span> },
+                    { header: "ID", accessorKey: "id", cell: (e) => <span className="font-mono text-xs text-muted-foreground">{e.id.slice(-8)}</span> },
                     { header: "Event Type", accessorKey: "eventType", cell: (e) => <span className="font-mono font-medium">{e.eventType}</span> },
                     { header: "Actor", cell: (e) => e.actor ? <span>{e.actor.name}</span> : <span className="italic text-muted-foreground">System</span> },
                     { header: "Timestamp", cell: (e) => <span className="text-sm">{new Date(e.createdAt).toLocaleString()}</span> }
