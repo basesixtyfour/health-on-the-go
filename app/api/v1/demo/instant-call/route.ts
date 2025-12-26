@@ -10,7 +10,7 @@
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createRoom } from "@/lib/daily";
+import { createRoom, deleteRoom } from "@/lib/daily";
 import {
   errorResponse,
   successResponse,
@@ -96,83 +96,133 @@ export async function POST(_request: NextRequest) {
       );
     }
 
-    // Determine patient and doctor based on who initiated
-    let patientId: string;
-    let doctorId: string;
+    // For demo mode, always use the fixed demo doctor and patient IDs
+    // This ensures both users join the same consultation
+    const patientId = demoPatient.id;
+    const doctorId = demoDoctor.id;
 
-    if (userEmail === DEMO_DOCTOR_EMAIL) {
-      // Demo doctor initiated - use demo patient
-      doctorId = user.id;
-      patientId = demoPatient.id;
-    } else {
-      // Demo patient initiated - use demo doctor
-      patientId = user.id;
-      doctorId = demoDoctor.id;
-    }
-
-    // Create a demo consultation with PAID status (bypassing payment)
-    const consultation = await prisma.consultation.create({
-      data: {
+    // Check for existing active consultation between demo doctor and patient
+    const existingConsultation = await prisma.consultation.findFirst({
+      where: {
         patientId,
         doctorId,
-        specialty: "GENERAL",
-        status: ConsultationStatus.PAID,
-        scheduledStartAt: new Date(), // Scheduled for now
-      },
-    });
-
-    // Create patient intake for demo
-    await prisma.patientIntake.create({
-      data: {
-        consultationId: consultation.id,
-        nameOrAlias: "Demo Patient",
-        ageRange: "18-39",
-        chiefComplaint: "Hackathon demonstration",
-        consentAcceptedAt: new Date(),
-      },
-    });
-
-    // Create Daily room
-    const roomName = `demo_${consultation.id}_${Date.now()}`;
-    const room = await createRoom(roomName, TOKEN_EXPIRY_MINUTES);
-
-    // Create video session
-    const videoSession = await prisma.videoSession.create({
-      data: {
-        consultationId: consultation.id,
-        provider: "DAILY",
-        roomName: room.name,
-        roomUrl: room.url,
-      },
-    });
-
-    // Update consultation to IN_CALL
-    await prisma.consultation.update({
-      where: { id: consultation.id },
-      data: {
-        status: ConsultationStatus.IN_CALL,
-        startedAt: new Date(),
-      },
-    });
-
-    // Create audit event
-    await prisma.auditEvent.create({
-      data: {
-        actorUserId: user.id,
-        consultationId: consultation.id,
-        eventType: "DEMO_CALL_CREATED",
-        eventMetadata: {
-          roomName: videoSession.roomName,
-          demo: true,
+        status: {
+          in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
         },
       },
+      include: {
+        videoSession: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
-    return successResponse({
-      consultationId: consultation.id,
-      message:
-        "🎬 Demo call created! The other participant can join from their dashboard.",
-    });
+    // If an active consultation exists, return it instead of creating a new one
+    if (existingConsultation) {
+      // Create audit event for rejoining
+      await prisma.auditEvent.create({
+        data: {
+          actorUserId: user.id,
+          consultationId: existingConsultation.id,
+          eventType: "DEMO_CALL_REJOINED",
+          eventMetadata: {
+            roomName: existingConsultation.videoSession?.roomName,
+            demo: true,
+            userEmail,
+          },
+        },
+      });
+
+      return successResponse({
+        consultationId: existingConsultation.id,
+        message:
+          "🎬 Joining existing demo call! Both participants will be in the same room.",
+        isExisting: true,
+      });
+    }
+
+    // Create Daily room first (external API call - can't be in transaction)
+    const roomName = `demo_${Date.now()}`;
+    const room = await createRoom(roomName, TOKEN_EXPIRY_MINUTES);
+
+    try {
+      // Wrap all DB operations in a transaction for atomicity
+      const consultation = await prisma.$transaction(async (tx) => {
+        // Create consultation with PAID status (bypassing payment)
+        const newConsultation = await tx.consultation.create({
+          data: {
+            patientId,
+            doctorId,
+            specialty: "GENERAL",
+            status: ConsultationStatus.PAID,
+            scheduledStartAt: new Date(),
+          },
+        });
+
+        // Create patient intake for demo
+        await tx.patientIntake.create({
+          data: {
+            consultationId: newConsultation.id,
+            nameOrAlias: "Demo Patient",
+            ageRange: "18-39",
+            chiefComplaint: "Hackathon demonstration",
+            consentAcceptedAt: new Date(),
+          },
+        });
+
+        // Create video session
+        await tx.videoSession.create({
+          data: {
+            consultationId: newConsultation.id,
+            provider: "DAILY",
+            roomName: room.name,
+            roomUrl: room.url,
+          },
+        });
+
+        // Update consultation to IN_CALL
+        await tx.consultation.update({
+          where: { id: newConsultation.id },
+          data: {
+            status: ConsultationStatus.IN_CALL,
+            startedAt: new Date(),
+          },
+        });
+
+        // Create audit event
+        await tx.auditEvent.create({
+          data: {
+            actorUserId: user.id,
+            consultationId: newConsultation.id,
+            eventType: "DEMO_CALL_CREATED",
+            eventMetadata: {
+              roomName: room.name,
+              demo: true,
+            },
+          },
+        });
+
+        return newConsultation;
+      });
+
+      return successResponse({
+        consultationId: consultation.id,
+        message:
+          "🎬 Demo call created! The other participant can join from their dashboard.",
+      });
+    } catch (txError) {
+      // Transaction failed - clean up the Daily room to avoid orphans
+      try {
+        await deleteRoom(room.name);
+      } catch (cleanupErr) {
+        console.error(
+          "Failed to delete Daily room after transaction failure:",
+          cleanupErr
+        );
+      }
+      throw txError; // Re-throw to be caught by outer catch block
+    }
   } catch (error) {
     console.error("Error creating demo call:", error);
     return errorResponse(

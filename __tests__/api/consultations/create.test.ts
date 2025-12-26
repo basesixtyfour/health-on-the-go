@@ -31,6 +31,16 @@ describe('POST /api/v1/consultations', () => {
   });
 
   /**
+   * Valid intake data for tests that need successful consultation creation
+   */
+  const validIntake = {
+    nameOrAlias: 'Test Patient',
+    ageRange: '18-39',
+    chiefComplaint: 'Test complaint',
+    consentAccepted: true,
+  };
+
+  /**
    * Helper to create a mock request
    */
   function createRequest(body: object): NextRequest {
@@ -71,7 +81,7 @@ describe('POST /api/v1/consultations', () => {
       prismaMock.consultation.create.mockResolvedValue(expectedConsultation as any);
       prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-      const request = createRequest({ specialty: 'CARDIOLOGY' });
+      const request = createRequest({ specialty: 'CARDIOLOGY', intake: validIntake });
       const response = await POST(request);
 
       expect(response.status).toBe(201);
@@ -123,7 +133,7 @@ describe('POST /api/v1/consultations', () => {
         prismaMock.consultation.create.mockResolvedValue(expectedConsultation as any);
         prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-        const request = createRequest({ specialty });
+        const request = createRequest({ specialty, intake: validIntake });
         const response = await POST(request);
 
         expect(response.status).toBe(201);
@@ -147,6 +157,7 @@ describe('POST /api/v1/consultations', () => {
       const request = createRequest({
         specialty: 'CARDIOLOGY',
         scheduledStartAt: futureDate,
+        intake: validIntake,
       });
       const response = await POST(request);
 
@@ -170,7 +181,7 @@ describe('POST /api/v1/consultations', () => {
       prismaMock.consultation.create.mockResolvedValue(expectedConsultation as any);
       prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-      const request = createRequest({ specialty: 'CARDIOLOGY' });
+      const request = createRequest({ specialty: 'CARDIOLOGY', intake: validIntake });
       const response = await POST(request);
 
       expect(response.status).toBe(201);
@@ -191,7 +202,7 @@ describe('POST /api/v1/consultations', () => {
       prismaMock.consultation.create.mockResolvedValue(expectedConsultation as any);
       prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-      const request = createRequest({ specialty: 'GENERAL' });
+      const request = createRequest({ specialty: 'GENERAL', intake: validIntake });
       const response = await POST(request);
 
       expect(response.status).toBe(201);
@@ -212,7 +223,7 @@ describe('POST /api/v1/consultations', () => {
       prismaMock.consultation.create.mockResolvedValue(expectedConsultation as any);
       prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-      const request = createRequest({ specialty: 'GENERAL' });
+      const request = createRequest({ specialty: 'GENERAL', intake: validIntake });
       const response = await POST(request);
 
       expect(response.status).toBe(201);
@@ -232,7 +243,7 @@ describe('POST /api/v1/consultations', () => {
       prismaMock.consultation.create.mockResolvedValue(consultation as any);
       prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-      const request = createRequest({ specialty: 'CARDIOLOGY' });
+      const request = createRequest({ specialty: 'CARDIOLOGY', intake: validIntake });
       await POST(request);
 
       // Verify audit event was created
@@ -253,7 +264,7 @@ describe('POST /api/v1/consultations', () => {
       prismaMock.consultation.create.mockResolvedValue(consultation as any);
       prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
-      const request = createRequest({ specialty: 'CARDIOLOGY' });
+      const request = createRequest({ specialty: 'CARDIOLOGY', intake: validIntake });
       const response = await POST(request);
 
       const body = await response.json();
