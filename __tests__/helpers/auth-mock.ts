@@ -41,7 +41,7 @@ export function mockGetSession(session: ReturnType<typeof createMockSession> | n
     },
   };
 
-  jest.mock('@/auth', () => ({
+  jest.mock('@/lib/auth', () => ({
     auth: mockAuth,
   }));
 

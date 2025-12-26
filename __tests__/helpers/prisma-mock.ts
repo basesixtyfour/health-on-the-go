@@ -27,6 +27,12 @@ export interface MockPrismaClient {
     findMany: jest.Mock;
     count: jest.Mock;
   };
+  payment: {
+    create: jest.Mock;
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    update: jest.Mock;
+  };
   $transaction: jest.Mock;
 }
 
@@ -54,11 +60,17 @@ export const prismaMock: MockPrismaClient = {
     findMany: jest.fn(),
     count: jest.fn(),
   },
+  payment: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 
 // Module mock - this will be used when the actual route is implemented
-jest.mock('@/prisma', () => ({
+jest.mock('@/lib/prisma', () => ({
   prisma: prismaMock,
 }));
 
