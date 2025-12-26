@@ -45,13 +45,14 @@ export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSu
     chiefComplaint: '',
     consent: false
   });
+  const [specialtyTouched, setSpecialtyTouched] = useState(false);
 
   // Update local state if defaultSpecialty changes
   React.useEffect(() => {
-    if (defaultSpecialty) {
+    if (defaultSpecialty && !specialtyTouched) {
       setFormData(prev => ({ ...prev, specialty: defaultSpecialty }));
     }
-  }, [defaultSpecialty]);
+  }, [defaultSpecialty, specialtyTouched]);
 
   const loading = isSubmitting || internalLoading;
 
@@ -99,7 +100,10 @@ export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSu
                 key={s.id}
                 specialty={s}
                 isSelected={formData.specialty === s.id}
-                onSelect={(id) => setFormData({ ...formData, specialty: id })}
+                onSelect={(id) => {
+                  setFormData({ ...formData, specialty: id });
+                  setSpecialtyTouched(true);
+                }}
               />
             ))}
           </div>
