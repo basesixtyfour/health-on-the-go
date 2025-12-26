@@ -79,7 +79,19 @@ export function DoctorSelection({ specialty, onSelect, onBack }: DoctorSelection
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {doctors.map((doctor) => (
-                    <Card key={doctor.doctorId} className="hover:border-primary transition-colors cursor-pointer" onClick={() => onSelect(doctor.doctorId)}>
+                    <Card
+                        key={doctor.doctorId}
+                        role="button"
+                        tabIndex={0}
+                        className="hover:border-primary transition-colors cursor-pointer focus:ring-2 focus:ring-primary focus:outline-none"
+                        onClick={() => onSelect(doctor.doctorId)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSelect(doctor.doctorId);
+                            }
+                        }}
+                    >
                         <CardContent className="p-6 flex items-start gap-4">
                             <Avatar className="h-16 w-16">
                                 <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${doctor.doctorId}`} />
