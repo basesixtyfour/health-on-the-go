@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 // Import Constants
-import { SPECIALTIES, AGE_RANGES } from '@/lib/constants';
+import { SPECIALTIES, AGE_RANGES, getSpecialtyPrice } from '@/lib/constants';
 
 // Import Modular Components
 import { InputField } from '@/components/ui/InputField';
@@ -36,7 +36,7 @@ interface IntakeFormProps {
   isSubmitting?: boolean;
 }
 
-const CONSULTATION_FEE = 50;
+
 
 export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecialty, isSubmitting = false }: IntakeFormProps) {
   const [internalLoading, setInternalLoading] = useState(false);
@@ -59,6 +59,9 @@ export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecial
   const loading = isSubmitting || internalLoading;
   const hasPreSelectedSpecialty = !!defaultSpecialty;
   const selectedSpecialtyInfo = SPECIALTIES.find(s => s.id === formData.specialty);
+
+  // Get dynamic consultation fee based on selected specialty
+  const consultationFee = getSpecialtyPrice(formData.specialty);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,7 +112,7 @@ export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecial
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-600">Fee</p>
-                  <p className="text-2xl font-bold text-emerald-600">${CONSULTATION_FEE}</p>
+                  <p className="text-2xl font-bold text-emerald-600">${consultationFee}</p>
                 </div>
               </div>
             )}
@@ -127,12 +130,13 @@ export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecial
                         setFormData({ ...formData, specialty: s.id });
                         setSpecialtyTouched(true);
                       }}
-                      className={`p-3 rounded-lg border text-sm font-medium transition-all ${formData.specialty === s.id
+                      className={`p-3 rounded-lg border text-sm transition-all flex flex-col items-center gap-1 ${formData.specialty === s.id
                         ? 'bg-blue-600 text-white border-blue-600'
                         : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'
                         }`}
                     >
-                      {s.label}
+                      <span className="font-medium">{s.label}</span>
+                      <span className={`text-xs ${formData.specialty === s.id ? 'text-blue-100' : 'text-emerald-600 font-semibold'}`}>${s.price}</span>
                     </button>
                   ))}
                 </div>
@@ -200,7 +204,7 @@ export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecial
               {hasPreSelectedSpecialty && (
                 <div className="text-center py-2 border-t border-slate-100">
                   <p className="text-xs text-slate-500">Total</p>
-                  <p className="text-xl font-bold text-slate-900">${CONSULTATION_FEE} USD</p>
+                  <p className="text-xl font-bold text-slate-900">${consultationFee} USD</p>
                 </div>
               )}
 
