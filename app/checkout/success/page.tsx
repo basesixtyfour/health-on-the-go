@@ -1,14 +1,15 @@
 import React from 'react';
 import Link from 'next/link';
-import { CheckCircle2, Video, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Video, AlertCircle, Clock } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
+import { squareClient } from '@/lib/square';
 import { ConsultationStatus, PaymentStatus } from '@/app/generated/prisma/client';
 
 /**
  * Payment Success Page
  * 
  * This page is shown after Square redirects back from checkout.
- * It verifies the payment status and updates the consultation to PAID.
+ * It VERIFIES the payment with Square API before updating status.
  */
 export default async function PaymentSuccessPage({
   searchParams,
@@ -31,6 +32,7 @@ export default async function PaymentSuccessPage({
 
   // Verify and update payment status
   let paymentVerified = false;
+  let isPending = false;
   let errorMessage = '';
 
   try {
@@ -50,28 +52,87 @@ export default async function PaymentSuccessPage({
     } else if (payment.status === PaymentStatus.PAID) {
       // Already paid - good to go!
       paymentVerified = true;
+    } else if (payment.providerOrderId) {
+      // Payment is PENDING - verify with Square API before updating
+      try {
+        const orderResponse = await squareClient.orders.get({ orderId: payment.providerOrderId! });
+
+        const order = orderResponse.order;
+
+        // Check if the order is actually paid
+        // Square marks orders with state 'COMPLETED' when fully paid
+        if (order?.state === 'COMPLETED') {
+          // Order is paid - update our records
+          await prisma.$transaction([
+            prisma.payment.update({
+              where: { id: payment.id },
+              data: {
+                status: PaymentStatus.PAID,
+                paidAt: new Date()
+              }
+            }),
+            prisma.consultation.update({
+              where: { id: consultationId },
+              data: { status: ConsultationStatus.PAID }
+            })
+          ]);
+          paymentVerified = true;
+          console.log(`[Success Page] Verified with Square API and updated consultation ${consultationId} to PAID`);
+        } else {
+          // Order not completed yet - show pending state
+          isPending = true;
+          console.log(`[Success Page] Order ${payment.providerOrderId} state: ${order?.state}`);
+        }
+      } catch (squareError) {
+        console.error('Square API verification error:', squareError);
+        // If Square API fails, show pending state rather than auto-approving
+        isPending = true;
+      }
     } else {
-      // Payment is PENDING - update to PAID since Square redirected to success
-      // In production, webhook should handle this, but this is a fallback
-      await prisma.$transaction([
-        prisma.payment.update({
-          where: { id: payment.id },
-          data: {
-            status: PaymentStatus.PAID,
-            paidAt: new Date()
-          }
-        }),
-        prisma.consultation.update({
-          where: { id: consultationId },
-          data: { status: ConsultationStatus.PAID }
-        })
-      ]);
-      paymentVerified = true;
-      console.log(`[Success Page] Updated consultation ${consultationId} to PAID`);
+      // No provider order ID - can't verify
+      errorMessage = 'Payment record is incomplete. Please contact support.';
     }
   } catch (error) {
     console.error('Payment verification error:', error);
     errorMessage = 'Unable to verify payment status. Please try again.';
+  }
+
+  // Pending state - payment not yet confirmed by Square
+  if (isPending) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+            <Clock className="h-12 w-12 text-amber-600 animate-pulse" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-slate-900">Payment Processing</h1>
+            <p className="text-slate-500">
+              Your payment is being processed. This may take a moment.
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg space-y-4">
+            <p className="text-sm text-slate-600">
+              If your payment was successful, please refresh this page in a few seconds.
+            </p>
+            <div className="flex gap-4 justify-center">
+              <Link
+                href={`/checkout/success?id=${consultationId}`}
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition"
+              >
+                Refresh Page
+              </Link>
+              <Link
+                href="/dashboard"
+                className="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-300 transition"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Error state
@@ -140,3 +201,4 @@ export default async function PaymentSuccessPage({
     </div>
   );
 }
+

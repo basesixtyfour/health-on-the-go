@@ -5,6 +5,7 @@ import {
   Stethoscope,
   ShieldCheck,
   ChevronRight,
+  ChevronLeft,
   Loader2,
   AlertCircle,
   Activity
@@ -31,11 +32,12 @@ interface IntakeFormProps {
   onSuccess?: (consultationId: string) => void;
   // If provided, this overrides the internal submission logic
   onSubmit?: (data: IntakeFormData) => Promise<void>;
+  onBack?: () => void;
   defaultSpecialty?: string;
   isSubmitting?: boolean;
 }
 
-export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSubmitting = false }: IntakeFormProps) {
+export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecialty, isSubmitting = false }: IntakeFormProps) {
   const [internalLoading, setInternalLoading] = useState(false);
   const [error, setError] = useState("");
   const [formData, setFormData] = useState<IntakeFormData>({
@@ -181,6 +183,17 @@ export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSu
                 )}
 
                 <div className="space-y-4">
+                  {onBack && (
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      disabled={loading}
+                      className="w-full bg-slate-100 text-slate-700 py-4 rounded-2xl font-bold text-sm hover:bg-slate-200 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Back to Time Selection
+                    </button>
+                  )}
                   <button
                     disabled={loading || !formData.specialty || !formData.consent}
                     className="w-full bg-blue-600 text-white py-5 rounded-2xl font-bold text-sm shadow-xl shadow-blue-200 hover:bg-blue-700 disabled:bg-slate-100 disabled:shadow-none disabled:text-slate-400 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
