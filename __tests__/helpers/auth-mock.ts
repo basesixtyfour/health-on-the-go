@@ -12,6 +12,7 @@ export interface MockSessionUser {
   image: string | null;
   createdAt: Date;
   updatedAt: Date;
+  doctorProfile?: any; // Allow mocking doctor details
 }
 
 /**
