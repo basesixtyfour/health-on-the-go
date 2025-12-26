@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { CheckCircle2, Video, AlertCircle, Clock, Calendar, User, Stethoscope, CalendarPlus } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import { squareClient } from '@/lib/square';
@@ -215,6 +216,12 @@ export default async function PaymentSuccessPage({
     : '';
 
   // Generate Google Calendar link
+  // Get origin from headers for server-side rendering
+  const headersList = await headers();
+  const host = headersList.get('host') || 'localhost:3000';
+  const protocol = headersList.get('x-forwarded-proto') || 'http';
+  const appOrigin = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
+
   const generateCalendarLink = () => {
     if (!consultationDetails?.scheduledStartAt) return '#';
     const start = consultationDetails.scheduledStartAt;
@@ -224,7 +231,7 @@ export default async function PaymentSuccessPage({
     const endStr = end.toISOString().replace(/-|:|\.\d{3}/g, '');
 
     const title = encodeURIComponent(`Telehealth Consultation - ${specialtyLabel}`);
-    const details = encodeURIComponent(`Your virtual consultation with Dr. ${consultationDetails.doctorName}.\n\nJoin link: ${typeof window !== 'undefined' ? window.location.origin : ''}/video/${consultationId}`);
+    const details = encodeURIComponent(`Your virtual consultation with Dr. ${consultationDetails.doctorName}.\n\nJoin link: ${appOrigin}/video/${consultationId}`);
 
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startStr}/${endStr}&details=${details}`;
   };
