@@ -33,7 +33,6 @@ function getUserEmail(user: unknown): string | null {
 }
 
 export async function POST(_request: NextRequest) {
-  // Check if demo mode is enabled
   if (process.env.DEMO_MODE !== "true") {
     return errorResponse(
       ErrorCodes.FORBIDDEN,
@@ -50,11 +49,8 @@ export async function POST(_request: NextRequest) {
     );
   }
 
-  // Check authentication
   const authResult = await requireAuth();
-  if (authResult.errorResponse) {
-    return authResult.errorResponse;
-  }
+  if (authResult.errorResponse) return authResult.errorResponse;
 
   const { session } = authResult;
   const user = session.user;
@@ -62,7 +58,6 @@ export async function POST(_request: NextRequest) {
   try {
     // Allow only demo accounts to trigger demo call creation (prevents accidental prod abuse)
     const userEmail = getUserEmail(user);
-
     if (userEmail !== DEMO_DOCTOR_EMAIL && userEmail !== DEMO_PATIENT_EMAIL) {
       return errorResponse(
         ErrorCodes.FORBIDDEN,
@@ -71,11 +66,16 @@ export async function POST(_request: NextRequest) {
       );
     }
 
-    // Get the demo doctor
-    const demoDoctor = await prisma.user.findUnique({
-      where: { email: DEMO_DOCTOR_EMAIL },
-      select: { id: true },
-    });
+    const [demoDoctor, demoPatient] = await Promise.all([
+      prisma.user.findUnique({
+        where: { email: DEMO_DOCTOR_EMAIL },
+        select: { id: true },
+      }),
+      prisma.user.findUnique({
+        where: { email: DEMO_PATIENT_EMAIL },
+        select: { id: true },
+      }),
+    ]);
 
     if (!demoDoctor) {
       return errorResponse(
@@ -85,12 +85,6 @@ export async function POST(_request: NextRequest) {
       );
     }
 
-    // Get the demo patient
-    const demoPatient = await prisma.user.findUnique({
-      where: { email: DEMO_PATIENT_EMAIL },
-      select: { id: true },
-    });
-
     if (!demoPatient) {
       return errorResponse(
         ErrorCodes.NOT_FOUND,
@@ -99,18 +93,23 @@ export async function POST(_request: NextRequest) {
       );
     }
 
-    // For demo mode, always use the fixed demo doctor and patient IDs
-    // This ensures both users join the same consultation
-    const patientId = demoPatient.id;
-    const doctorId = demoDoctor.id;
+    // Determine patient and doctor based on who initiated.
+    // (Either way, it's the same doctor/patient pair, just with a different initiator.)
+    const patientId = userEmail === DEMO_PATIENT_EMAIL ? user.id : demoPatient.id;
+    const doctorId = userEmail === DEMO_DOCTOR_EMAIL ? user.id : demoDoctor.id;
 
-    // Check for existing active consultation between demo doctor and patient
-    const existingConsultation = await prisma.consultation.findFirst({
+    const reuseCutoff = new Date(Date.now() - ROOM_EXPIRY_MINUTES * 60 * 1000);
+
+    // Only reuse consultations within room expiry. Daily rooms do not exist beyond ROOM_EXPIRY_MINUTES.
+    const reusableConsultation = await prisma.consultation.findFirst({
       where: {
         patientId,
         doctorId,
         status: {
           in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
+        },
+        createdAt: {
+          gte: reuseCutoff,
         },
       },
       include: {
@@ -121,16 +120,14 @@ export async function POST(_request: NextRequest) {
       },
     });
 
-    // If an active consultation exists, return it instead of creating a new one
-    if (existingConsultation) {
-      // Create audit event for rejoining
+    if (reusableConsultation) {
       await prisma.auditEvent.create({
         data: {
           actorUserId: user.id,
-          consultationId: existingConsultation.id,
+          consultationId: reusableConsultation.id,
           eventType: "DEMO_CALL_REJOINED",
           eventMetadata: {
-            roomName: existingConsultation.videoSession?.roomName,
+            roomName: reusableConsultation.videoSession?.roomName,
             demo: true,
             userEmail,
           },
@@ -138,43 +135,98 @@ export async function POST(_request: NextRequest) {
       });
 
       return successResponse({
-        consultationId: existingConsultation.id,
+        consultationId: reusableConsultation.id,
         message:
           "🎬 Joining existing demo call! Both participants will be in the same room.",
         isExisting: true,
       });
     }
 
+    // Best-effort cleanup of the most recent stale "active" consultation (room already expired).
+    const staleConsultation = await prisma.consultation.findFirst({
+      where: {
+        patientId,
+        doctorId,
+        status: {
+          in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL],
+        },
+        createdAt: {
+          lt: reuseCutoff,
+        },
+      },
+      include: {
+        videoSession: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (staleConsultation) {
+      const staleRoomName = staleConsultation.videoSession?.roomName;
+
+      if (staleRoomName) {
+        try {
+          await deleteRoom(staleRoomName);
+        } catch (cleanupErr) {
+          console.error(
+            "Failed to delete expired Daily room for demo consultation:",
+            cleanupErr
+          );
+        }
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.consultation.update({
+          where: { id: staleConsultation.id },
+          data: {
+            status: ConsultationStatus.EXPIRED,
+            endedAt: new Date(),
+          },
+        });
+
+        await tx.auditEvent.create({
+          data: {
+            actorUserId: user.id,
+            consultationId: staleConsultation.id,
+            eventType: "DEMO_CALL_EXPIRED",
+            eventMetadata: {
+              roomName: staleRoomName,
+              demo: true,
+            },
+          },
+        });
+      });
+    }
+
     // Create Daily room first (external API call - can't be in transaction)
     const roomName = `demo_${Date.now()}`;
-    const room = await createRoom(roomName, TOKEN_EXPIRY_MINUTES);
+    const room = await createRoom(roomName, ROOM_EXPIRY_MINUTES);
 
     try {
-      // Wrap all DB operations in a transaction for atomicity
       const consultation = await prisma.$transaction(async (tx) => {
-        // Create consultation with PAID status (bypassing payment)
+        const now = new Date();
+
         const newConsultation = await tx.consultation.create({
           data: {
             patientId,
             doctorId,
             specialty: "GENERAL",
             status: ConsultationStatus.PAID,
-            scheduledStartAt: new Date(),
+            scheduledStartAt: now,
           },
         });
 
-        // Create patient intake for demo
         await tx.patientIntake.create({
           data: {
             consultationId: newConsultation.id,
             nameOrAlias: "Demo Patient",
             ageRange: "18-39",
             chiefComplaint: "Hackathon demonstration",
-            consentAcceptedAt: new Date(),
+            consentAcceptedAt: now,
           },
         });
 
-        // Create video session
         await tx.videoSession.create({
           data: {
             consultationId: newConsultation.id,
@@ -184,16 +236,14 @@ export async function POST(_request: NextRequest) {
           },
         });
 
-        // Update consultation to IN_CALL
         await tx.consultation.update({
           where: { id: newConsultation.id },
           data: {
             status: ConsultationStatus.IN_CALL,
-            startedAt: new Date(),
+            startedAt: now,
           },
         });
 
-        // Create audit event
         await tx.auditEvent.create({
           data: {
             actorUserId: user.id,
@@ -224,7 +274,7 @@ export async function POST(_request: NextRequest) {
           cleanupErr
         );
       }
-      throw txError; // Re-throw to be caught by outer catch block
+      throw txError;
     }
   } catch (error) {
     console.error("Error creating demo call:", error);
