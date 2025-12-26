@@ -5,6 +5,7 @@ import {
   Stethoscope,
   ShieldCheck,
   ChevronRight,
+  ChevronLeft,
   Loader2,
   AlertCircle,
   Activity,
@@ -30,13 +31,14 @@ export interface IntakeFormData {
 interface IntakeFormProps {
   onSuccess?: (consultationId: string) => void;
   onSubmit?: (data: IntakeFormData) => Promise<void>;
+  onBack?: () => void;
   defaultSpecialty?: string;
   isSubmitting?: boolean;
 }
 
 const CONSULTATION_FEE = 50;
 
-export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSubmitting = false }: IntakeFormProps) {
+export default function IntakeForm({ onSuccess, onSubmit, onBack, defaultSpecialty, isSubmitting = false }: IntakeFormProps) {
   const [internalLoading, setInternalLoading] = useState(false);
   const [error, setError] = useState("");
   const [formData, setFormData] = useState<IntakeFormData>({
@@ -119,8 +121,8 @@ export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSu
                         setSpecialtyTouched(true);
                       }}
                       className={`p-3 rounded-lg border text-sm font-medium transition-all ${formData.specialty === s.id
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'
                         }`}
                     >
                       {s.label}
@@ -195,20 +197,34 @@ export default function IntakeForm({ onSuccess, onSubmit, defaultSpecialty, isSu
                 </div>
               )}
 
-              <button
-                disabled={loading || !formData.specialty || !formData.consent}
-                className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold text-sm shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:bg-slate-200 disabled:shadow-none disabled:text-slate-400 transition-all flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin h-4 w-4" />
-                ) : (
-                  <>Proceed to Payment <ChevronRight className="h-4 w-4" /></>
+              <div className="space-y-3">
+                {onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    disabled={loading}
+                    className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl font-semibold text-sm hover:bg-slate-200 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </button>
                 )}
-              </button>
 
-              <p className="text-[9px] text-center text-slate-400 font-medium uppercase tracking-wide">
-                HIPAA • Encrypted • Square
-              </p>
+                <button
+                  disabled={loading || !formData.specialty || !formData.consent}
+                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold text-sm shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:bg-slate-200 disabled:shadow-none disabled:text-slate-400 transition-all flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <Loader2 className="animate-spin h-4 w-4" />
+                  ) : (
+                    <>Proceed to Payment <ChevronRight className="h-4 w-4" /></>
+                  )}
+                </button>
+
+                <p className="text-[9px] text-center text-slate-400 font-medium uppercase tracking-wide">
+                  HIPAA • Encrypted • Square
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -93,6 +93,7 @@ export function BookingWizard() {
                     <IntakeForm
                         defaultSpecialty={selectedSpecialty!}
                         onSubmit={handleIntakeSubmit}
+                        onBack={() => setStep("TIME")}
                         isSubmitting={isBooking}
                     />
                 );
