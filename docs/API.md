@@ -19,6 +19,15 @@ All endpoints require authentication via session cookie (Google OAuth).
 | `POST` | `/consultations/:id/intake` | Submit intake form | Patient only |
 | `PUT` | `/consultations/:id/intake` | Update intake form | Patient only |
 
+### Users
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `GET` | `/users/me` | Get current user profile | Authenticated user |
+| `PATCH` | `/users/me` | Update current user profile | Owner |
+| `GET` | `/users/me/consultations` | List current user's consultations | Authenticated user |
+| `POST` | `/users/me/consultations` | Create consultation for current user | Authenticated user |
+
 ### Doctors
 
 | Method | Endpoint | Description | Auth |
