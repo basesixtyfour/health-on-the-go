@@ -5,7 +5,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Search, Pencil } from "lucide-react";
 import { VALID_SPECIALTIES } from "@/lib/types";
 
 import {
@@ -17,6 +17,11 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 
+interface DoctorProfile {
+    specialties: string[];
+    timezone: string | null;
+}
+
 interface User {
     id: string;
     name: string;
@@ -24,6 +29,7 @@ interface User {
     role: "PATIENT" | "DOCTOR" | "ADMIN";
     emailVerified: boolean;
     createdAt: string;
+    doctorProfile?: DoctorProfile | null;
 }
 
 export default function UsersPage() {
@@ -34,10 +40,14 @@ export default function UsersPage() {
     const [totalPages, setTotalPages] = useState(1);
     const [search, setSearch] = useState("");
 
-    // Modal State
+    // Doctor Promotion Modal State
     const [isDoctorModalOpen, setIsDoctorModalOpen] = useState(false);
     const [selectedUserForDoctor, setSelectedUserForDoctor] = useState<string | null>(null);
-    const [selectedSpecialty, setSelectedSpecialty] = useState("GENERAL");
+    const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>(["GENERAL"]);
+
+    // Edit Specialties Modal State
+    const [isEditSpecialtiesOpen, setIsEditSpecialtiesOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
 
     async function fetchUsers() {
         try {
@@ -54,35 +64,32 @@ export default function UsersPage() {
             setTotalPages(raw.meta.totalPages);
         } catch (error) {
             console.error(error);
-            // alert("Failed to load users");
         } finally {
             setLoading(false);
         }
     }
 
     useEffect(() => {
-        const timeout = setTimeout(fetchUsers, 300); // Debounce search
+        const timeout = setTimeout(fetchUsers, 300);
         return () => clearTimeout(timeout);
     }, [page, search]);
 
     async function handleRoleChange(userId: string, newRole: string) {
-        // Intercept Doctor promotion for Modal
         if (newRole === "DOCTOR") {
             setSelectedUserForDoctor(userId);
-            setSelectedSpecialty("GENERAL");
+            setSelectedSpecialties(["GENERAL"]);
             setIsDoctorModalOpen(true);
             return;
         }
 
         if (!confirm(`Are you sure you want to change this user's role to ${newRole}?`)) return;
-
         await executeRoleChange(userId, newRole);
     }
 
-    async function executeRoleChange(userId: string, newRole: string, specialty?: string) {
+    async function executeRoleChange(userId: string, newRole: string, specialties?: string[]) {
         try {
             const body: any = { userId, role: newRole };
-            if (specialty) body.specialty = specialty;
+            if (specialties && specialties.length > 0) body.specialties = specialties;
 
             const res = await fetch("/api/v1/admin/users", {
                 method: "PATCH",
@@ -90,21 +97,55 @@ export default function UsersPage() {
                 body: JSON.stringify(body),
             });
 
-            if (!res.ok) throw new Error("Failed to update user role");
+            if (!res.ok) throw new Error("Failed to update user");
 
-            alert("User role updated successfully");
+            alert("User updated successfully");
             setIsDoctorModalOpen(false);
-            fetchUsers(); // Refresh list
+            setIsEditSpecialtiesOpen(false);
+            fetchUsers();
         } catch (error) {
             console.error(error);
-            alert("Failed to update role");
+            alert("Failed to update user");
+        }
+    }
+
+    async function updateDoctorSpecialties(userId: string, specialties: string[]) {
+        try {
+            const res = await fetch("/api/v1/admin/users", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId, specialties }),
+            });
+
+            if (!res.ok) throw new Error("Failed to update specialties");
+
+            alert("Specialties updated successfully");
+            setIsEditSpecialtiesOpen(false);
+            fetchUsers();
+        } catch (error) {
+            console.error(error);
+            alert("Failed to update specialties");
         }
     }
 
     const confirmMakeDoctor = () => {
-        if (selectedUserForDoctor) {
-            executeRoleChange(selectedUserForDoctor, "DOCTOR", selectedSpecialty);
+        if (selectedUserForDoctor && selectedSpecialties.length > 0) {
+            executeRoleChange(selectedUserForDoctor, "DOCTOR", selectedSpecialties);
         }
+    };
+
+    const openEditSpecialties = (user: User) => {
+        setEditingUser(user);
+        setSelectedSpecialties(user.doctorProfile?.specialties || []);
+        setIsEditSpecialtiesOpen(true);
+    };
+
+    const toggleSpecialty = (specialty: string) => {
+        setSelectedSpecialties(prev =>
+            prev.includes(specialty)
+                ? prev.filter(s => s !== specialty)
+                : [...prev, specialty]
+        );
     };
 
     return (
@@ -122,7 +163,7 @@ export default function UsersPage() {
                             className="pl-9"
                             value={search}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                setPage(1); // Reset page on search
+                                setPage(1);
                                 setSearch(e.target.value);
                             }}
                         />
@@ -146,6 +187,37 @@ export default function UsersPage() {
                             <Badge variant={u.role === "ADMIN" ? "destructive" : u.role === "DOCTOR" ? "default" : "secondary"}>
                                 {u.role}
                             </Badge>
+                        )
+                    },
+                    {
+                        header: "Specialties",
+                        accessorKey: "doctorProfile",
+                        cell: (u) => (
+                            u.role === "DOCTOR" ? (
+                                <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap gap-1">
+                                        {u.doctorProfile?.specialties?.length ? (
+                                            u.doctorProfile.specialties.map((s: string) => (
+                                                <Badge key={s} variant="outline" className="text-xs">
+                                                    {s}
+                                                </Badge>
+                                            ))
+                                        ) : (
+                                            <span className="text-muted-foreground text-xs">No specialties</span>
+                                        )}
+                                    </div>
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6"
+                                        onClick={() => openEditSpecialties(u)}
+                                    >
+                                        <Pencil className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            ) : (
+                                <span className="text-muted-foreground text-xs">—</span>
+                            )
                         )
                     },
                     {
@@ -173,38 +245,83 @@ export default function UsersPage() {
                 ]}
             />
 
+            {/* Make Doctor Modal */}
             <Dialog open={isDoctorModalOpen} onOpenChange={setIsDoctorModalOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Make User a Doctor</DialogTitle>
                         <DialogDescription>
-                            Select a specialty for the new doctor profile.
+                            Select specialties for the new doctor profile.
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <label htmlFor="specialty" className="text-right text-sm font-medium">
-                                Specialty
-                            </label>
-                            <select
-                                id="specialty"
-                                className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                value={selectedSpecialty}
-                                onChange={(e) => setSelectedSpecialty(e.target.value)}
-                            >
-                                {VALID_SPECIALTIES.map((s) => (
-                                    <option key={s} value={s}>
-                                        {s.charAt(0) + s.slice(1).toLowerCase()}
-                                    </option>
-                                ))}
-                            </select>
+                    <div className="py-4">
+                        <label className="text-sm font-medium mb-3 block">Select Specialties</label>
+                        <div className="flex flex-wrap gap-2">
+                            {VALID_SPECIALTIES.map((s) => (
+                                <Button
+                                    key={s}
+                                    type="button"
+                                    size="sm"
+                                    variant={selectedSpecialties.includes(s) ? "default" : "outline"}
+                                    onClick={() => toggleSpecialty(s)}
+                                >
+                                    {s.charAt(0) + s.slice(1).toLowerCase()}
+                                </Button>
+                            ))}
                         </div>
+                        {selectedSpecialties.length === 0 && (
+                            <p className="text-sm text-red-500 mt-2">Please select at least one specialty</p>
+                        )}
                     </div>
 
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsDoctorModalOpen(false)}>Cancel</Button>
-                        <Button onClick={confirmMakeDoctor}>Confirm Promotion</Button>
+                        <Button onClick={confirmMakeDoctor} disabled={selectedSpecialties.length === 0}>
+                            Confirm Promotion
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Specialties Modal */}
+            <Dialog open={isEditSpecialtiesOpen} onOpenChange={setIsEditSpecialtiesOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Doctor Specialties</DialogTitle>
+                        <DialogDescription>
+                            Update specialties for {editingUser?.name}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-4">
+                        <label className="text-sm font-medium mb-3 block">Select Specialties</label>
+                        <div className="flex flex-wrap gap-2">
+                            {VALID_SPECIALTIES.map((s) => (
+                                <Button
+                                    key={s}
+                                    type="button"
+                                    size="sm"
+                                    variant={selectedSpecialties.includes(s) ? "default" : "outline"}
+                                    onClick={() => toggleSpecialty(s)}
+                                >
+                                    {s.charAt(0) + s.slice(1).toLowerCase()}
+                                </Button>
+                            ))}
+                        </div>
+                        {selectedSpecialties.length === 0 && (
+                            <p className="text-sm text-red-500 mt-2">Please select at least one specialty</p>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsEditSpecialtiesOpen(false)}>Cancel</Button>
+                        <Button
+                            onClick={() => editingUser && updateDoctorSpecialties(editingUser.id, selectedSpecialties)}
+                            disabled={selectedSpecialties.length === 0}
+                        >
+                            Save Changes
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

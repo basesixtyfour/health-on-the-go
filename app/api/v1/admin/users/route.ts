@@ -47,7 +47,13 @@ export async function GET(request: NextRequest) {
                     role: true,
                     createdAt: true,
                     emailVerified: true,
-                    image: true
+                    image: true,
+                    doctorProfile: {
+                        select: {
+                            specialties: true,
+                            timezone: true
+                        }
+                    }
                 }
             }),
             prisma.user.count({ where }),
@@ -70,8 +76,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * PATCH /api/v1/admin/users
- * Admin-only: Update user role and optionally create DoctorProfile
- * Body: { userId: string, role: UserRole, specialty?: string, seedAvailability?: boolean }
+ * Admin-only: Update user role and optionally manage DoctorProfile
+ * Body: { userId: string, role?: UserRole, specialty?: string, specialties?: string[] }
+ * - specialty: Add a single specialty (for backwards compatibility)
+ * - specialties: Set the complete list of specialties
  */
 export async function PATCH(request: NextRequest) {
     const authResult = await requireAuth();
@@ -89,44 +97,83 @@ export async function PATCH(request: NextRequest) {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, "Invalid JSON body", 400);
     }
 
-    const { userId, role, specialty, seedAvailability } = body;
+    const { userId, role, specialty, specialties } = body;
 
-    if (!userId || !role) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, "userId and role are required", 400);
-    }
-
-    // Validate role
-    if (!Object.values(UserRole).includes(role)) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, "Invalid role", 400, { validRoles: Object.values(UserRole) });
+    if (!userId) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, "userId is required", 400);
     }
 
     try {
-        // Use a transaction
         const result = await prisma.$transaction(async (tx) => {
-            const updatedUser = await tx.user.update({
+            // First fetch the user to check current state
+            const existingUser = await tx.user.findUnique({
                 where: { id: userId },
-                data: { role },
-                select: { id: true, name: true, role: true }
+                include: { doctorProfile: true }
             });
 
-            // If promoting to DOCTOR and specialty is provided
-            if (role === 'DOCTOR' && specialty) {
-                // Seed default doctor profile
-                // Note: Availability seeding is skipped as per user request to avoid DB schema changes.
-                const profile = await tx.doctorProfile.upsert({
-                    where: { doctorId: userId },
-                    create: {
-                        doctorId: userId,
-                        specialties: [specialty],
-                        timezone: "UTC"
-                    },
-                    update: {
-                        specialties: [specialty]
-                    }
+            if (!existingUser) {
+                throw { code: 'P2025' };
+            }
+
+            // Update role if provided
+            let updatedUser = existingUser;
+            if (role && Object.values(UserRole).includes(role)) {
+                updatedUser = await tx.user.update({
+                    where: { id: userId },
+                    data: { role },
+                    include: { doctorProfile: true }
                 });
             }
 
-            return updatedUser;
+            // Handle doctor profile updates
+            const targetRole = role || existingUser.role;
+            if (targetRole === 'DOCTOR') {
+                // Determine what specialties to set
+                let newSpecialties: string[] = [];
+
+                if (specialties && Array.isArray(specialties)) {
+                    // If specialties array is provided, use it directly
+                    newSpecialties = specialties;
+                } else if (specialty) {
+                    // If single specialty provided, add to existing or create new
+                    const existingSpecialties = existingUser.doctorProfile?.specialties || [];
+                    if (!existingSpecialties.includes(specialty)) {
+                        newSpecialties = [...existingSpecialties, specialty];
+                    } else {
+                        newSpecialties = existingSpecialties;
+                    }
+                }
+
+                if (newSpecialties.length > 0 || !existingUser.doctorProfile) {
+                    await tx.doctorProfile.upsert({
+                        where: { doctorId: userId },
+                        create: {
+                            doctorId: userId,
+                            specialties: newSpecialties.length > 0 ? newSpecialties : ['GENERAL'],
+                            timezone: "UTC"
+                        },
+                        update: {
+                            specialties: newSpecialties
+                        }
+                    });
+                }
+            }
+
+            // Return updated user with profile
+            return await tx.user.findUnique({
+                where: { id: userId },
+                select: {
+                    id: true,
+                    name: true,
+                    role: true,
+                    doctorProfile: {
+                        select: {
+                            specialties: true,
+                            timezone: true
+                        }
+                    }
+                }
+            });
         });
 
         return successResponse(result);
@@ -138,3 +185,4 @@ export async function PATCH(request: NextRequest) {
         return errorResponse(ErrorCodes.INTERNAL_ERROR, "Failed to update user", 500);
     }
 }
+

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, Clock, Video } from "lucide-react";
+import { Calendar, Video } from "lucide-react";
 import { VideoSessionCard } from "@/components/dashboard/patient/VideoSessionCard";
 import { DemoCallButton } from "@/components/demo/DemoCallButton";
 import { prisma } from "@/lib/prisma";
@@ -35,18 +35,8 @@ export default async function PatientDashboard() {
         take: 1
     });
 
-    // Fetch pending consultations (CREATED or PAYMENT_PENDING - need action)
-    const pendingConsultations = await prisma.consultation.findMany({
-        where: {
-            patientId: userId,
-            status: { in: [ConsultationStatus.CREATED, ConsultationStatus.PAYMENT_PENDING] }
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 3
-    });
-
     const nextConsultation = upcomingConsultations[0];
-    const pendingCount = pendingConsultations.length;
+
 
     // Format the next consultation date/time
     const formatDateTime = (date: Date) => {
@@ -118,42 +108,24 @@ export default async function PatientDashboard() {
                     </CardContent>
                 </Card>
 
-                {/* Pending Actions Card */}
-                <Card className={`shadow-sm ${pendingCount > 0 ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>
+                {/* New Booking Card */}
+                <Card className="shadow-sm bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className={`text-sm font-medium ${pendingCount > 0 ? 'text-amber-800 dark:text-amber-200' : ''}`}>
-                            Pending Actions
+                        <CardTitle className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                            Book Consultation
                         </CardTitle>
-                        <Clock className={`h-4 w-4 ${pendingCount > 0 ? 'text-amber-600' : 'text-slate-500'}`} />
+                        <Calendar className="h-4 w-4 text-emerald-600" />
                     </CardHeader>
                     <CardContent>
-                        {pendingCount > 0 ? (
-                            <>
-                                <div className={`text-2xl font-bold ${pendingCount > 0 ? 'text-amber-900 dark:text-amber-100' : ''}`}>
-                                    {pendingCount} Pending
-                                </div>
-                                <p className={`text-xs mt-1 ${pendingCount > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
-                                    Complete payment to confirm booking.
-                                </p>
-                                <Link href="/book">
-                                    <Button className="w-full mt-4 bg-amber-600 hover:bg-amber-700 text-white" variant="default">
-                                        Complete Booking
-                                    </Button>
-                                </Link>
-                            </>
-                        ) : (
-                            <>
-                                <div className="text-2xl font-bold">All Clear!</div>
-                                <p className="text-xs text-slate-500 mt-1">
-                                    No pending actions at this time.
-                                </p>
-                                <Link href="/book">
-                                    <Button className="w-full mt-4" variant="outline">
-                                        Start New Intake
-                                    </Button>
-                                </Link>
-                            </>
-                        )}
+                        <div className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">New Booking</div>
+                        <p className="text-xs mt-1 text-emerald-700 dark:text-emerald-300">
+                            Schedule a consultation with a specialist.
+                        </p>
+                        <Link href="/book">
+                            <Button className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white" variant="default">
+                                Book Now
+                            </Button>
+                        </Link>
                     </CardContent>
                 </Card>
 

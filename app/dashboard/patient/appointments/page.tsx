@@ -5,8 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Video, Calendar, Clock } from "lucide-react";
+import { Video, Calendar, Clock, CreditCard, AlertCircle } from "lucide-react";
 import Link from "next/link";
+import { PayButton } from "@/components/patient/PayButton";
 
 export default async function AppointmentsPage() {
     const session = await auth.api.getSession({
@@ -28,12 +29,18 @@ export default async function AppointmentsPage() {
 
     const now = new Date();
 
-    // Split into upcoming and past
+    // Split into categories
     const upcomingConsultations = consultations.filter(
         c => c.scheduledStartAt && c.scheduledStartAt > now && ['PAID', 'IN_CALL'].includes(c.status)
     );
+
+    // Unpaid consultations (CREATED, PAYMENT_PENDING, PAYMENT_FAILED)
+    const unpaidConsultations = consultations.filter(
+        c => ['CREATED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(c.status)
+    );
+
     const pastConsultations = consultations.filter(
-        c => c.status === 'COMPLETED' || (c.scheduledStartAt && c.scheduledStartAt <= now)
+        c => c.status === 'COMPLETED' || c.status === 'CANCELLED' || c.status === 'EXPIRED'
     );
 
     const getStatusVariant = (status: string) => {
@@ -42,6 +49,9 @@ export default async function AppointmentsPage() {
             case 'PAID': return 'secondary';
             case 'IN_CALL': return 'destructive';
             case 'CANCELLED': return 'outline';
+            case 'PAYMENT_FAILED': return 'destructive';
+            case 'CREATED': return 'outline';
+            case 'PAYMENT_PENDING': return 'outline';
             default: return 'outline';
         }
     };
@@ -112,6 +122,41 @@ export default async function AppointmentsPage() {
                     </div>
                 )}
             </div>
+
+            {/* Unpaid Appointments - Show first with alert */}
+            {unpaidConsultations.length > 0 && (
+                <div className="space-y-4">
+                    <h2 className="text-xl font-semibold flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-amber-600" />
+                        Payment Required
+                    </h2>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {unpaidConsultations.map((c) => (
+                            <Card key={c.id} className="border-amber-200 bg-amber-50/50 dark:bg-amber-900/10">
+                                <CardHeader className="pb-2">
+                                    <div className="flex items-center justify-between">
+                                        <CardTitle className="text-lg">{c.specialty}</CardTitle>
+                                        <Badge variant={getStatusVariant(c.status)}>
+                                            {c.status === 'PAYMENT_FAILED' ? 'Payment Failed' : 'Awaiting Payment'}
+                                        </Badge>
+                                    </div>
+                                    <CardDescription>
+                                        Dr. {c.doctor?.name || 'TBD'}
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Clock className="h-4 w-4 text-muted-foreground" />
+                                        <span>{formatDateTime(c.scheduledStartAt)}</span>
+                                    </div>
+                                    <PayButton consultationId={c.id} />
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Past Appointments */}
             <div className="space-y-4">
