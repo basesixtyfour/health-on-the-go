@@ -1,15 +1,19 @@
 import React from 'react';
 import Link from 'next/link';
-import { CheckCircle2, Video, AlertCircle, Clock } from 'lucide-react';
+import { headers } from 'next/headers';
+import { CheckCircle2, Video, AlertCircle, Clock, Calendar, User, Stethoscope, CalendarPlus } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import { squareClient } from '@/lib/square';
 import { ConsultationStatus, PaymentStatus } from '@/app/generated/prisma/client';
+import { format } from 'date-fns';
+import { getSpecialtyPrice, SPECIALTIES } from '@/lib/constants';
 
 /**
- * Payment Success Page
+ * Payment Success / Appointment Confirmation Page
  * 
  * This page is shown after Square redirects back from checkout.
  * It VERIFIES the payment with Square API before updating status.
+ * Shows full appointment details after successful payment.
  */
 export default async function PaymentSuccessPage({
   searchParams,
@@ -34,6 +38,13 @@ export default async function PaymentSuccessPage({
   let paymentVerified = false;
   let isPending = false;
   let errorMessage = '';
+  let consultationDetails: {
+    id: string;
+    doctorName: string;
+    specialty: string;
+    scheduledStartAt: Date | null;
+    amountPaid: number;
+  } | null = null;
 
   try {
     // Find the payment record for this consultation
@@ -43,7 +54,17 @@ export default async function PaymentSuccessPage({
         status: { in: [PaymentStatus.PENDING, PaymentStatus.PAID] }
       },
       include: {
-        consultation: true
+        consultation: {
+          select: {
+            id: true,
+            status: true,
+            specialty: true,
+            scheduledStartAt: true,
+            doctor: {
+              select: { name: true }
+            }
+          }
+        }
       }
     });
 
@@ -54,30 +75,29 @@ export default async function PaymentSuccessPage({
       if (payment.consultation.status !== ConsultationStatus.PAID &&
         payment.consultation.status !== ConsultationStatus.IN_CALL &&
         payment.consultation.status !== ConsultationStatus.COMPLETED) {
-        // Update consultation status to PAID if it's not already in a paid/active state
         await prisma.consultation.update({
           where: { id: consultationId },
           data: { status: ConsultationStatus.PAID }
         });
-        console.log(`[Success Page] Payment was PAID but consultation was ${payment.consultation.status}, updated to PAID`);
       }
       paymentVerified = true;
+      consultationDetails = {
+        id: consultationId,
+        doctorName: payment.consultation.doctor?.name || 'Your Doctor',
+        specialty: payment.consultation.specialty,
+        scheduledStartAt: payment.consultation.scheduledStartAt,
+        amountPaid: Number(payment.amount) / 100, // Convert cents to dollars
+      };
     } else if (payment.providerOrderId) {
       // Payment is PENDING - verify with Square API before updating
       try {
         const orderResponse = await squareClient.orders.get({ orderId: payment.providerOrderId! });
-
         const order = orderResponse.order;
-        console.log(`[Success Page] Order ${payment.providerOrderId} state: ${order?.state}, tenders: ${order?.tenders?.length || 0}`);
 
-        // Check if the order has been paid
-        // For payment links, the order stays OPEN but will have tenders when paid
-        // A tender represents a successful payment
         const hasTenders = order?.tenders && order.tenders.length > 0;
         const isCompleted = order?.state === 'COMPLETED';
 
         if (hasTenders || isCompleted) {
-          // Order has been paid - update our records
           await prisma.$transaction([
             prisma.payment.update({
               where: { id: payment.id },
@@ -92,19 +112,21 @@ export default async function PaymentSuccessPage({
             })
           ]);
           paymentVerified = true;
-          console.log(`[Success Page] Verified payment via Square API (tenders: ${hasTenders}, completed: ${isCompleted}) - updated consultation ${consultationId} to PAID`);
+          consultationDetails = {
+            id: consultationId,
+            doctorName: payment.consultation.doctor?.name || 'Your Doctor',
+            specialty: payment.consultation.specialty,
+            scheduledStartAt: payment.consultation.scheduledStartAt,
+            amountPaid: Number(payment.amount) / 100,
+          };
         } else {
-          // Order not paid yet - show pending state
           isPending = true;
-          console.log(`[Success Page] Order ${payment.providerOrderId} has no tenders and state: ${order?.state}`);
         }
       } catch (squareError) {
         console.error('Square API verification error:', squareError);
-        // If Square API fails, show pending state rather than auto-approving
         isPending = true;
       }
     } else {
-      // No provider order ID - can't verify
       errorMessage = 'Payment record is incomplete. Please contact support.';
     }
   } catch (error) {
@@ -170,7 +192,7 @@ export default async function PaymentSuccessPage({
               Go to Dashboard
             </Link>
             <Link
-              href={`/book`}
+              href="/book"
               className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition"
             >
               Try Again
@@ -181,37 +203,145 @@ export default async function PaymentSuccessPage({
     );
   }
 
-  // Success state
+  // Get specialty label
+  const specialtyInfo = SPECIALTIES.find(s => s.id === consultationDetails?.specialty);
+  const specialtyLabel = specialtyInfo?.label || consultationDetails?.specialty || 'General Practice';
+
+  // Format date/time for display
+  const appointmentDate = consultationDetails?.scheduledStartAt
+    ? format(consultationDetails.scheduledStartAt, 'EEEE, MMMM d, yyyy')
+    : '';
+  const appointmentTime = consultationDetails?.scheduledStartAt
+    ? format(consultationDetails.scheduledStartAt, 'h:mm a')
+    : '';
+
+  // Generate Google Calendar link
+  // Get origin from headers for server-side rendering
+  const headersList = await headers();
+  const host = headersList.get('host') || 'localhost:3000';
+  const protocol = headersList.get('x-forwarded-proto') || 'http';
+  const appOrigin = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
+
+  const generateCalendarLink = () => {
+    if (!consultationDetails?.scheduledStartAt) return '#';
+    const start = consultationDetails.scheduledStartAt;
+    const end = new Date(start.getTime() + 30 * 60000); // 30 min duration
+
+    const startStr = start.toISOString().replace(/-|:|\.\d{3}/g, '');
+    const endStr = end.toISOString().replace(/-|:|\.\d{3}/g, '');
+
+    const title = encodeURIComponent(`Telehealth Consultation - ${specialtyLabel}`);
+    const details = encodeURIComponent(`Your virtual consultation with Dr. ${consultationDetails.doctorName}.\n\nJoin link: ${appOrigin}/video/${consultationId}`);
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startStr}/${endStr}&details=${details}`;
+  };
+
+  // Success state with full appointment details
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-      <div className="max-w-md w-full text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto shadow-inner shadow-green-200">
-          <CheckCircle2 className="h-12 w-12 text-green-600" />
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-6">
+      <div className="max-w-lg w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+
+        {/* Success Header */}
+        <div className="text-center space-y-4">
+          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-200">
+            <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-black text-slate-900">Booking Confirmed!</h1>
+            <p className="text-slate-500 mt-1">Your appointment has been scheduled</p>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Payment Verified</h1>
-          <p className="text-slate-500 font-medium">Your consultation link is now active.</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/50 space-y-4">
-          <div className="p-4 bg-slate-50 rounded-2xl flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Consultation ID</span>
-            <span className="text-sm font-mono font-bold text-slate-900">{consultationId.slice(0, 8)}...</span>
+        {/* Appointment Details Card */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+          {/* Doctor Info Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center">
+                <User className="h-7 w-7" />
+              </div>
+              <div>
+                <p className="text-blue-100 text-sm">Your Doctor</p>
+                <p className="text-xl font-bold">Dr. {consultationDetails?.doctorName}</p>
+              </div>
+            </div>
           </div>
 
-          <Link
-            href={`/video/${consultationId}`}
-            className="w-full bg-slate-900 text-white py-5 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-black transition-all shadow-lg shadow-slate-300"
-          >
-            Enter Consultation Room
-            <Video className="h-4 w-4" />
+          {/* Details Grid */}
+          <div className="p-6 space-y-4">
+            {/* Date & Time */}
+            <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl">
+              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Calendar className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Date & Time</p>
+                <p className="font-semibold text-slate-900">{appointmentDate}</p>
+                <p className="text-blue-600 font-bold">{appointmentTime}</p>
+              </div>
+            </div>
+
+            {/* Specialty */}
+            <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl">
+              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Stethoscope className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Specialty</p>
+                <p className="font-semibold text-slate-900">{specialtyLabel}</p>
+              </div>
+            </div>
+
+            {/* Amount Paid */}
+            <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+              <div>
+                <p className="text-xs text-emerald-600 uppercase tracking-wide font-medium">Amount Paid</p>
+                <p className="text-2xl font-bold text-emerald-700">${consultationDetails?.amountPaid}</p>
+              </div>
+              <div className="px-3 py-1 bg-emerald-100 rounded-full">
+                <span className="text-xs font-bold text-emerald-700">PAID</span>
+              </div>
+            </div>
+
+            {/* Confirmation ID */}
+            <div className="text-center pt-2">
+              <p className="text-xs text-slate-400">Confirmation ID</p>
+              <p className="font-mono text-sm text-slate-600">{consultationId.slice(0, 16)}...</p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="p-6 pt-0 space-y-3">
+            <Link
+              href={`/video/${consultationId}`}
+              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-black transition-all shadow-lg"
+            >
+              <Video className="h-5 w-5" />
+              Join Consultation Room
+            </Link>
+
+            <a
+              href={generateCalendarLink()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full bg-white border-2 border-slate-200 text-slate-700 py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 hover:border-blue-300 hover:bg-blue-50 transition-all"
+            >
+              <CalendarPlus className="h-5 w-5" />
+              Add to Google Calendar
+            </a>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center space-y-2">
+          <p className="text-xs text-slate-500">
+            You will also receive a confirmation email with these details.
+          </p>
+          <Link href="/dashboard/patient" className="text-sm text-blue-600 hover:underline font-medium">
+            Go to Dashboard →
           </Link>
         </div>
 
-        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-          Session ID valid for 1 hour
-        </p>
       </div>
     </div>
   );
