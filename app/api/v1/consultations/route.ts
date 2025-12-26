@@ -13,7 +13,9 @@ import {
   requireAuth,
   ErrorCodes,
   VALID_SPECIALTIES,
+  VALID_AGE_RANGES,
   type Specialty,
+  type AgeRange,
 } from '@/lib/api-utils';
 import { ConsultationStatus, UserRole } from '@/app/generated/prisma/client';
 
@@ -32,7 +34,17 @@ export async function POST(request: NextRequest) {
   const user = session.user;
 
   // Parse request body
-  let body: { specialty?: string; scheduledStartAt?: string };
+  let body: {
+    specialty?: string;
+    scheduledStartAt?: string;
+    doctorId?: string;
+    intake?: {
+      nameOrAlias?: string;
+      ageRange?: string;
+      chiefComplaint?: string;
+      consentAccepted?: boolean;
+    };
+  };
   try {
     body = await request.json();
   } catch {
@@ -50,6 +62,43 @@ export async function POST(request: NextRequest) {
       'Specialty is required',
       400,
       { field: 'specialty' }
+    );
+  }
+
+  // Validate intake
+  if (!body.intake) {
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      'Intake information is required',
+      400,
+      { field: 'intake' }
+    );
+  }
+
+  if (!body.intake.nameOrAlias || typeof body.intake.nameOrAlias !== 'string' || body.intake.nameOrAlias.trim() === '') {
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      'Intake name or alias is required',
+      400,
+      { field: 'intake.nameOrAlias' }
+    );
+  }
+
+  if (body.intake.consentAccepted !== true) {
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      'Consent must be accepted',
+      400,
+      { field: 'intake.consentAccepted' }
+    );
+  }
+
+  if (!body.intake.ageRange || !VALID_AGE_RANGES.includes(body.intake.ageRange as AgeRange)) {
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      `Invalid age range. Valid options: ${VALID_AGE_RANGES.join(', ')}`,
+      400,
+      { field: 'intake.ageRange', validOptions: VALID_AGE_RANGES }
     );
   }
 
@@ -85,15 +134,55 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Validate doctor if provided
+  if (body.doctorId) {
+    const doctor = await prisma.user.findUnique({
+      where: { id: body.doctorId },
+      include: { doctorProfile: true },
+    });
+
+    if (!doctor || doctor.role !== UserRole.DOCTOR) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        'Doctor not found or invalid',
+        400, // Using 400 as this is a validation failure of the input ID
+        { field: 'doctorId' }
+      );
+    }
+
+    if (!doctor.doctorProfile?.specialties?.includes(body.specialty)) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        'Selected doctor does not support the requested specialty',
+        400,
+        {
+          field: 'doctorId',
+          error: 'SPECIALTY_MISMATCH',
+          requestedSpecialty: body.specialty,
+          doctorSpecialties: doctor.doctorProfile?.specialties || []
+        }
+      );
+    }
+  }
+
   try {
     // Create consultation in a transaction with audit event
     const result = await prisma.$transaction(async (tx) => {
       const consultation = await tx.consultation.create({
         data: {
           patientId: user.id,
+          doctorId: body.doctorId || null,
           specialty: body.specialty!,
           status: ConsultationStatus.CREATED,
           scheduledStartAt,
+          patientIntake: {
+            create: {
+              nameOrAlias: body.intake!.nameOrAlias!.trim(),
+              ageRange: body.intake!.ageRange,
+              chiefComplaint: body.intake!.chiefComplaint,
+              consentAcceptedAt: new Date(),
+            },
+          },
         },
       });
 
@@ -106,6 +195,7 @@ export async function POST(request: NextRequest) {
           eventMetadata: {
             specialty: consultation.specialty,
             scheduledStartAt: consultation.scheduledStartAt?.toISOString() ?? null,
+            doctorId: consultation.doctorId,
           },
         },
       });
