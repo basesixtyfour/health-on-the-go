@@ -74,7 +74,7 @@ export default async function DoctorPatientsPage() {
                                         <div className="flex items-center gap-3">
                                             <Avatar>
                                                 <AvatarImage src={patient.image || ""} />
-                                                <AvatarFallback>{patient.name.charAt(0)}</AvatarFallback>
+                                                <AvatarFallback>{patient.name?.charAt(0) ?? '?'}</AvatarFallback>
                                             </Avatar>
                                             <span className="font-medium">{patient.name}</span>
                                         </div>

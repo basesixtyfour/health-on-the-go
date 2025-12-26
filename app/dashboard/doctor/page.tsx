@@ -10,12 +10,15 @@ import { prisma } from "@/lib/prisma";
 export default async function DoctorDashboard() {
     const { session } = await requireAuth();
 
+    if (!session) {
+        redirect("/");
+    }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const doctorId = session!.user.id;
+    const doctorId = session.user.id;
 
     const [appointmentsToday, pendingConsultations, totalPatients, totalConsultations] = await Promise.all([
         // Appointments today (IN_CALL or PAID/scheduled)

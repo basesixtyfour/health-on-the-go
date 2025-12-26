@@ -22,7 +22,10 @@ export default function PatientsPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let isMounted = true;
+
         async function fetchPatients() {
+            setLoading(true);
             try {
                 // In a real app, we'd have a specific endpoint for unique patients
                 // For now, we can re-use fetching consultations and unique-ify them client-side or add an endpoint
@@ -33,12 +36,23 @@ export default function PatientsPage() {
                 // But wait, the user asked to "work on doctor dashboard". 
                 // Detailed data fetching implies we probably need new endpoints or server components.
                 // I will update this file to be a Server Component to fetch directly from Prisma for simplicity/speed.
+
+                if (isMounted) {
+                    // Placeholder for setting state if we actually had data logic here
+                    // setPatients(data);
+                }
             } catch (error) {
-                console.error(error);
+                if (isMounted) console.error(error);
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         }
+
+        fetchPatients();
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     // Switching to Server Component pattern in the wrapper is better.

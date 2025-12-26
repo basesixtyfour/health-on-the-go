@@ -57,7 +57,7 @@ export function TimeSlotSelection({ specialty, doctorId, onSelect, onBack }: Tim
         }
 
         fetchSlots();
-    }, [doctorId, selectedDate]);
+    }, [specialty, doctorId, selectedDate]);
 
     return (
         <div className="p-6 space-y-6">

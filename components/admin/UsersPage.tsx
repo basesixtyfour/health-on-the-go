@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
+import { VALID_SPECIALTIES } from "@/lib/types";
+
 import {
     Dialog,
     DialogContent,
@@ -23,8 +25,6 @@ interface User {
     emailVerified: boolean;
     createdAt: string;
 }
-
-const VALID_SPECIALTIES = ["GENERAL", "CARDIOLOGY", "DERMATOLOGY", "PEDIATRICS", "PSYCHIATRY", "ORTHOPEDICS"];
 
 export default function UsersPage() {
     const [users, setUsers] = useState<User[]>([]);
