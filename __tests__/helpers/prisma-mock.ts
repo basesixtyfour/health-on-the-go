@@ -29,6 +29,16 @@ export interface MockPrismaClient {
     count: jest.Mock;
   };
   doctorProfile: {
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    findMany: jest.Mock;
+    update: jest.Mock;
+    count: jest.Mock;
+  };
+  payment: {
+    create: jest.Mock;
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
     update: jest.Mock;
   };
   $transaction: jest.Mock;
@@ -60,6 +70,16 @@ export const prismaMock: MockPrismaClient = {
     count: jest.fn(),
   },
   doctorProfile: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    count: jest.fn(),
+  },
+  payment: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
     update: jest.fn(),
   },
   $transaction: jest.fn(),

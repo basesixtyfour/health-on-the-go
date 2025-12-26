@@ -8,6 +8,7 @@ import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 interface TimeSlotSelectionProps {
+    specialty: string;
     doctorId: string;
     onSelect: (date: Date) => void;
     onBack: () => void;
@@ -19,7 +20,7 @@ interface TimeSlot {
     available: boolean;
 }
 
-export function TimeSlotSelection({ doctorId, onSelect, onBack }: TimeSlotSelectionProps) {
+export function TimeSlotSelection({ specialty, doctorId, onSelect, onBack }: TimeSlotSelectionProps) {
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
     const [slots, setSlots] = useState<TimeSlot[]>([]);
     const [loading, setLoading] = useState(false);
@@ -38,7 +39,7 @@ export function TimeSlotSelection({ doctorId, onSelect, onBack }: TimeSlotSelect
                 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
                 const res = await fetch(
-                    `/api/v1/doctors/availability?doctorId=${doctorId}&date=${dateStr}&patientTimezone=${timeZone}`
+                    `/api/v1/doctors/availability?specialty=${specialty}&doctorId=${doctorId}&date=${dateStr}&patientTimezone=${timeZone}`
                 );
 
                 if (!res.ok) {

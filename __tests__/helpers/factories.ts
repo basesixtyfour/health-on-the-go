@@ -94,6 +94,7 @@ export function createMockConsultation(overrides: Partial<{
   endedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  patientIntake: any; // Allow mocking relations
 }> = {}) {
   const id = generateId('consult');
   return {

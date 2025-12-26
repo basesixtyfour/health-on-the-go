@@ -12,65 +12,199 @@ import {
   successResponse,
   requireAuth,
   ErrorCodes,
-} from "@/lib/api-utils";
-import { ConsultationStatus } from "@/app/generated/prisma/client";
+  VALID_SPECIALTIES,
+  type Specialty,
+} from '@/lib/api-utils';
+import { ConsultationStatus, UserRole } from '@/app/generated/prisma/client';
 
 /**
  * POST /api/v1/consultations
- * Create a new consultation booking with intake data.
+ * Create a new consultation
  */
 export async function POST(request: NextRequest) {
+  // Check authentication
   const authResult = await requireAuth();
   if (authResult.errorResponse) {
     return authResult.errorResponse;
   }
-  const { session } = authResult;
 
-  let body;
+  const { session } = authResult;
+  const user = session.user;
+
+  // Parse request body
+  let body: { specialty?: string; scheduledStartAt?: string };
   try {
     body = await request.json();
   } catch {
-    return errorResponse(ErrorCodes.VALIDATION_ERROR, "Invalid JSON", 400);
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      'Invalid JSON body',
+      400
+    );
   }
 
-  const {
-    specialty,
-    doctorId,
-    scheduledStartAt, // ISO Date string
-    intake
-  } = body;
+  // Validate specialty
+  if (!body.specialty) {
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      'Specialty is required',
+      400,
+      { field: 'specialty' }
+    );
+  }
 
-  if (!specialty || !scheduledStartAt || !intake) {
-    return errorResponse(ErrorCodes.VALIDATION_ERROR, "Missing required fields", 400);
+  if (!VALID_SPECIALTIES.includes(body.specialty as Specialty)) {
+    return errorResponse(
+      ErrorCodes.VALIDATION_ERROR,
+      `Invalid specialty. Valid options: ${VALID_SPECIALTIES.join(', ')}`,
+      400,
+      { field: 'specialty', validOptions: VALID_SPECIALTIES }
+    );
+  }
+
+  // Validate scheduledStartAt if provided
+  let scheduledStartAt: Date | null = null;
+  if (body.scheduledStartAt) {
+    scheduledStartAt = new Date(body.scheduledStartAt);
+    if (isNaN(scheduledStartAt.getTime())) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid date format for scheduledStartAt',
+        400,
+        { field: 'scheduledStartAt' }
+      );
+    }
+    // Ensure scheduled time is in the future
+    if (scheduledStartAt.getTime() <= Date.now()) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        'Scheduled time must be in the future',
+        400,
+        { field: 'scheduledStartAt' }
+      );
+    }
   }
 
   try {
-    // 1. Validate Availability (Double Check)
-    // In a real app, you'd lock the slot here. For now, we trust the optimistic UI but handle collisions at DB level if constraints existed.
+    // Create consultation in a transaction with audit event
+    const result = await prisma.$transaction(async (tx) => {
+      const consultation = await tx.consultation.create({
+        data: {
+          patientId: user.id,
+          specialty: body.specialty!,
+          status: ConsultationStatus.CREATED,
+          scheduledStartAt,
+        },
+      });
 
-    // 2. Create Consultation & Intake Transactionally
-    const consultation = await prisma.consultation.create({
-      data: {
-        patientId: session.user.id,
-        doctorId: doctorId || null, // Doctor might be auto-assigned/null if none selected
-        specialty: specialty,
-        status: ConsultationStatus.CREATED,
-        scheduledStartAt: new Date(scheduledStartAt),
-        patientIntake: {
-          create: {
-            nameOrAlias: intake.nameOrAlias,
-            ageRange: intake.ageRange,
-            chiefComplaint: intake.chiefComplaint,
-            consentAcceptedAt: new Date()
-          }
-        }
-      }
+      // Create audit event
+      await tx.auditEvent.create({
+        data: {
+          actorUserId: user.id,
+          consultationId: consultation.id,
+          eventType: 'CONSULT_CREATED',
+          eventMetadata: {
+            specialty: consultation.specialty,
+            scheduledStartAt: consultation.scheduledStartAt?.toISOString() ?? null,
+          },
+        },
+      });
+
+      return consultation;
     });
 
-    return successResponse(consultation, 201);
-
+    return successResponse(result, 201);
   } catch (error) {
-    console.error("Booking Creation Error:", error);
-    return errorResponse(ErrorCodes.INTERNAL_ERROR, "Failed to create booking", 500);
+    console.error('Error creating consultation:', error);
+    return errorResponse(
+      ErrorCodes.INTERNAL_ERROR,
+      'Failed to create consultation',
+      500
+    );
+  }
+}
+
+/**
+ * GET /api/v1/consultations
+ * List consultations with role-based filtering
+ */
+export async function GET(request: NextRequest) {
+  // Check authentication
+  const authResult = await requireAuth();
+  if (authResult.errorResponse) {
+    return authResult.errorResponse;
+  }
+
+  const { session } = authResult;
+  const user = session.user;
+
+  // Parse query parameters
+  const { searchParams } = new URL(request.url);
+  const status = searchParams.get('status');
+  const specialty = searchParams.get('specialty');
+  const limit = parseInt(searchParams.get('limit') ?? '20', 10);
+  const offset = parseInt(searchParams.get('offset') ?? '0', 10);
+
+  // Build where clause based on user role
+  type WhereClause = {
+    patientId?: string;
+    doctorId?: string;
+    status?: ConsultationStatus;
+    specialty?: string;
+    OR?: Array<{ patientId?: string; doctorId?: string }>;
+  };
+
+  let whereClause: WhereClause = {};
+
+  // Role-based filtering
+  if (user.role === UserRole.PATIENT) {
+    // Patients can only see their own consultations
+    whereClause.patientId = user.id;
+  } else if (user.role === UserRole.DOCTOR) {
+    // Doctors see consultations assigned to them
+    whereClause.doctorId = user.id;
+  }
+  // Admins can see all consultations - no filter needed
+
+  // Apply optional filters
+  if (status && Object.values(ConsultationStatus).includes(status as ConsultationStatus)) {
+    whereClause.status = status as ConsultationStatus;
+  }
+  if (specialty && VALID_SPECIALTIES.includes(specialty as Specialty)) {
+    whereClause.specialty = specialty;
+  }
+
+  try {
+    // Execute query with pagination
+    const [consultations, total] = await Promise.all([
+      prisma.consultation.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(limit, 100), // Cap at 100
+        skip: offset,
+        include: {
+          patientIntake: true,
+          payments: true,
+        },
+      }),
+      prisma.consultation.count({ where: whereClause }),
+    ]);
+
+    return successResponse({
+      data: consultations,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + consultations.length < total,
+      },
+    });
+  } catch (error) {
+    console.error('Error listing consultations:', error);
+    return errorResponse(
+      ErrorCodes.INTERNAL_ERROR,
+      'Failed to list consultations',
+      500
+    );
   }
 }
