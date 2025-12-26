@@ -50,7 +50,17 @@ export default async function PaymentSuccessPage({
     if (!payment) {
       errorMessage = 'No payment record found for this consultation.';
     } else if (payment.status === PaymentStatus.PAID) {
-      // Already paid - good to go!
+      // Payment is already paid - ensure consultation is also marked as PAID
+      if (payment.consultation.status !== ConsultationStatus.PAID &&
+        payment.consultation.status !== ConsultationStatus.IN_CALL &&
+        payment.consultation.status !== ConsultationStatus.COMPLETED) {
+        // Update consultation status to PAID if it's not already in a paid/active state
+        await prisma.consultation.update({
+          where: { id: consultationId },
+          data: { status: ConsultationStatus.PAID }
+        });
+        console.log(`[Success Page] Payment was PAID but consultation was ${payment.consultation.status}, updated to PAID`);
+      }
       paymentVerified = true;
     } else if (payment.providerOrderId) {
       // Payment is PENDING - verify with Square API before updating
@@ -58,11 +68,16 @@ export default async function PaymentSuccessPage({
         const orderResponse = await squareClient.orders.get({ orderId: payment.providerOrderId! });
 
         const order = orderResponse.order;
+        console.log(`[Success Page] Order ${payment.providerOrderId} state: ${order?.state}, tenders: ${order?.tenders?.length || 0}`);
 
-        // Check if the order is actually paid
-        // Square marks orders with state 'COMPLETED' when fully paid
-        if (order?.state === 'COMPLETED') {
-          // Order is paid - update our records
+        // Check if the order has been paid
+        // For payment links, the order stays OPEN but will have tenders when paid
+        // A tender represents a successful payment
+        const hasTenders = order?.tenders && order.tenders.length > 0;
+        const isCompleted = order?.state === 'COMPLETED';
+
+        if (hasTenders || isCompleted) {
+          // Order has been paid - update our records
           await prisma.$transaction([
             prisma.payment.update({
               where: { id: payment.id },
@@ -77,11 +92,11 @@ export default async function PaymentSuccessPage({
             })
           ]);
           paymentVerified = true;
-          console.log(`[Success Page] Verified with Square API and updated consultation ${consultationId} to PAID`);
+          console.log(`[Success Page] Verified payment via Square API (tenders: ${hasTenders}, completed: ${isCompleted}) - updated consultation ${consultationId} to PAID`);
         } else {
-          // Order not completed yet - show pending state
+          // Order not paid yet - show pending state
           isPending = true;
-          console.log(`[Success Page] Order ${payment.providerOrderId} state: ${order?.state}`);
+          console.log(`[Success Page] Order ${payment.providerOrderId} has no tenders and state: ${order?.state}`);
         }
       } catch (squareError) {
         console.error('Square API verification error:', squareError);
@@ -201,4 +216,3 @@ export default async function PaymentSuccessPage({
     </div>
   );
 }
-
