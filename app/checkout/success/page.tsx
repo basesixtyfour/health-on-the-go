@@ -2,12 +2,12 @@ import React from 'react';
 import Link from 'next/link';
 import { CheckCircle2, Video, ArrowRight } from 'lucide-react';
 
-export default function PaymentSuccessPage({
+export default async function PaymentSuccessPage({
   searchParams,
 }: {
-  searchParams: { id: string };
+  searchParams: Promise<{ id: string }>;
 }) {
-  const consultationId = searchParams.id;
+  const { id: consultationId } = await searchParams;
 
   if (!consultationId) {
     return (
