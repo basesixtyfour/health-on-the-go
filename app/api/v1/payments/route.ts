@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         redirectUrl.searchParams.set("id", consultationId);
 
         // 6. Call Square SDK
-        const result = await squareClient.checkout.paymentLinks.create({
+        const result = await squareClient.checkoutApi.createPaymentLink({
             idempotencyKey: randomUUID(),
             order: {
                 locationId: locationId,
