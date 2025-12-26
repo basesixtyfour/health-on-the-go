@@ -28,7 +28,7 @@ interface DailyMeetingTokenResponse {
  */
 export async function createRoom(
   roomName: string,
-  expiryMinutes: number = 60
+  expiryMinutes: number = 30
 ): Promise<{ name: string; url: string }> {
   if (!DAILY_API_KEY) {
     throw new Error("DAILY_API_KEY environment variable is not set");

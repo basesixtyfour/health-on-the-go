@@ -23,7 +23,7 @@ const EARLY_JOIN_WINDOW_MINUTES = 5;
 const LATE_JOIN_WINDOW_MINUTES = 30;
 
 // Token expiry (in minutes)
-const TOKEN_EXPIRY_MINUTES = 60;
+const TOKEN_EXPIRY_MINUTES = 30;
 
 interface RouteParams {
   params: Promise<{ id: string }>;
