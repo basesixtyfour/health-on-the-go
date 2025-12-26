@@ -11,7 +11,7 @@ import { prismaMock, resetPrismaMock, setupPrismaMock } from '../../helpers/pris
 
 // Mock auth module
 const mockGetSession = jest.fn();
-jest.mock('@/auth', () => ({
+jest.mock('@/lib/auth', () => ({
   auth: {
     api: {
       getSession: (...args: unknown[]) => mockGetSession(...args),
