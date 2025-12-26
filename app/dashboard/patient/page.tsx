@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, Video, Clock } from "lucide-react";
+import { Calendar, Clock } from "lucide-react";
+import { VideoSessionCard } from "@/components/dashboard/patient/VideoSessionCard";
+import { DemoCallButton } from "@/components/demo/DemoCallButton";
 
 export default async function PatientDashboard() {
     const session = await auth.api.getSession({
@@ -63,21 +65,11 @@ export default async function PatientDashboard() {
                     </CardContent>
                 </Card>
 
-                <Card className="bg-white dark:bg-slate-800 shadow-sm border-slate-200 dark:border-slate-700">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Video Sessions</CardTitle>
-                        <Video className="h-4 w-4 text-slate-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">Join Room</div>
-                        <p className="text-xs text-slate-500 mt-1">
-                            Enter your waiting room 5 mins early.
-                        </p>
-                        <Button className="w-full mt-4" variant="default" disabled>
-                            No Active Session
-                        </Button>
-                    </CardContent>
-                </Card>
+                {/* Video Sessions - Dynamic based on user's consultations */}
+                <VideoSessionCard userId={session.user.id} />
+
+                {/* Demo Mode Button - Only for hackathon demonstrations */}
+                {process.env.DEMO_MODE === 'true' && <DemoCallButton />}
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
