@@ -301,9 +301,10 @@ export async function GET(request: NextRequest) {
       // Generate slots in doctor's timezone for that doctor's day
       const timeSlots = generateTimeSlotsForDoctorDay(doctorDayStartInDoctorTZ);
 
+      const now = Date.now();
       const slots = timeSlots.map((slot) => ({
         ...slot,
-        available: !bookedTimes.has(slot.startTime.getTime()),
+        available: !bookedTimes.has(slot.startTime.getTime()) && slot.startTime.getTime() > now,
         doctorId: doctor.id,
       }));
 
@@ -430,6 +431,7 @@ export async function GET(request: NextRequest) {
         bounds.doctorDayStartInDoctorTZ
       );
 
+      const now = Date.now();
       return {
         doctorId: doctor.id,
         doctorName: doctor.name,
@@ -438,7 +440,7 @@ export async function GET(request: NextRequest) {
         date: bounds.doctorDayLabel,
         slots: timeSlots.map((slot) => ({
           ...slot,
-          available: !bookedTimes.has(slot.startTime.getTime()),
+          available: !bookedTimes.has(slot.startTime.getTime()) && slot.startTime.getTime() > now,
           doctorId: doctor.id,
         })),
       };
