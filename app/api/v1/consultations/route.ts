@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       ageRange?: string;
       chiefComplaint?: string;
       consentAccepted?: boolean;
+      consent?: boolean;
     };
   };
   try {
@@ -84,12 +85,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (body.intake.consentAccepted !== true) {
+  const hasConsent = body.intake.consent === true || body.intake.consentAccepted === true;
+  if (!hasConsent) {
     return errorResponse(
       ErrorCodes.VALIDATION_ERROR,
       'Consent must be accepted',
       400,
-      { field: 'intake.consentAccepted' }
+      { field: 'intake.consent' }
     );
   }
 
