@@ -18,7 +18,7 @@ A modern telehealth platform built with Next.js that enables patients to book an
 
 ## Tech Stack
 
-- **Framework:** Next.js 15 (App Router)
+- **Framework:** Next.js 16.1.1 (App Router)
 - **Database:** PostgreSQL with Prisma ORM
 - **Authentication:** Better Auth with Google OAuth
 - **Language:** TypeScript
