@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
         if (!baseUrl) {
             console.error("Missing NEXT_PUBLIC_BASE_URL");
             return errorResponse(
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         redirectUrl.searchParams.set("id", consultationId);
 
         // 6. Call Square SDK
-        const { result } = await (squareClient as any).checkout.createPaymentLink({
+        const result = await squareClient.checkout.paymentLinks.create({
             idempotencyKey: randomUUID(),
             order: {
                 locationId: locationId,
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
                 amount: amountInCents,
                 status: "PENDING",
                 providerCheckoutId: result.paymentLink.id,
-                providerOrderId: result.paymentLink.order_id,
+                providerOrderId: result.paymentLink.orderId,
                 // We'll update providerPaymentId via webhook later
             },
         });
