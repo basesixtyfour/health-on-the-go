@@ -1,13 +1,20 @@
-"use client";
-
 import { Activity, AlertCircle, Calendar, Users, Settings, FileText } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QueueCard } from "@/components/dashboard/doctor/QueueCard";
 import { ScheduleOverview } from "@/components/dashboard/doctor/ScheduleOverview";
 import { StatCard } from "@/components/dashboard/doctor/StatCard";
+import { requireAuth } from "@/lib/api-utils";
+import { redirect } from "next/navigation";
+import { UserRole } from "@/app/generated/prisma/client";
 
-export default function DoctorDashboard() {
+export default async function DoctorDashboard() {
+    const { session } = await requireAuth();
+
+    if (!session || session.user.role !== "DOCTOR") {
+        redirect("/dashboard");
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
