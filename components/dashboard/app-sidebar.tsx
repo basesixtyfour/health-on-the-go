@@ -11,6 +11,7 @@ import {
     LogOut,
     FileText,
     Video,
+    ShieldCheck,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
@@ -44,7 +45,16 @@ export function AppSidebar({ user }: AppSidebarProps) {
         { href: "/dashboard/doctor/settings", label: "Settings", icon: Settings },
     ];
 
-    const links = role === "DOCTOR" ? doctorLinks : patientLinks;
+    const adminLinks = [
+        { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
+        { href: "/dashboard/admin/users", label: "Users", icon: Users },
+        { href: "/dashboard/admin/consultations", label: "Consultations", icon: FileText },
+        { href: "/dashboard/admin/audit", label: "Audit Logs", icon: ShieldCheck },
+    ];
+
+    let links = patientLinks;
+    if (role === "DOCTOR") links = doctorLinks;
+    if (role === "ADMIN") links = adminLinks;
 
     const handleLogout = async () => {
         await authClient.signOut({
