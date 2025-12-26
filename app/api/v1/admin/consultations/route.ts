@@ -27,9 +27,24 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
     const limit = Math.max(1, Math.min(100, parseInt(searchParams.get("limit") || "20") || 20));
-    const status = searchParams.get("status") as ConsultationStatus | null;
+    const statusParam = searchParams.get("status");
     const doctorId = searchParams.get("doctorId");
     const patientId = searchParams.get("patientId");
+
+    // Validate status parameter
+    let status: ConsultationStatus | null = null;
+    if (statusParam) {
+        if (Object.values(ConsultationStatus).includes(statusParam as ConsultationStatus)) {
+            status = statusParam as ConsultationStatus;
+        } else {
+            return errorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                `Invalid status: ${statusParam}`,
+                400,
+                { validStatuses: Object.values(ConsultationStatus) }
+            );
+        }
+    }
 
     const skip = (page - 1) * limit;
 
