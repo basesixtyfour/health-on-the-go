@@ -32,13 +32,19 @@ interface User {
     doctorProfile?: DoctorProfile | null;
 }
 
-export default function UsersPage() {
+interface UsersPageProps {
+    initialRoleFilter?: "PATIENT" | "DOCTOR" | "ADMIN";
+    initialSearch?: string;
+}
+
+export default function UsersPage({ initialRoleFilter, initialSearch }: UsersPageProps) {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [limit] = useState(10);
     const [totalPages, setTotalPages] = useState(1);
-    const [search, setSearch] = useState("");
+    const [search, setSearch] = useState(initialSearch || "");
+    const [roleFilter, setRoleFilter] = useState<string | undefined>(initialRoleFilter);
 
     // Doctor Promotion Modal State
     const [isDoctorModalOpen, setIsDoctorModalOpen] = useState(false);
@@ -57,6 +63,9 @@ export default function UsersPage() {
                 limit: limit.toString(),
                 query: search
             });
+            if (roleFilter) {
+                params.set('role', roleFilter);
+            }
             const res = await fetch(`/api/v1/admin/users?${params}`);
             if (!res.ok) throw new Error("Failed to fetch users");
             const raw = await res.json();
@@ -72,7 +81,7 @@ export default function UsersPage() {
     useEffect(() => {
         const timeout = setTimeout(fetchUsers, 300);
         return () => clearTimeout(timeout);
-    }, [page, search]);
+    }, [page, search, roleFilter]);
 
     async function handleRoleChange(userId: string, newRole: string) {
         if (newRole === "DOCTOR") {
@@ -150,9 +159,11 @@ export default function UsersPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Users</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">
+                        {roleFilter ? `${roleFilter.charAt(0) + roleFilter.slice(1).toLowerCase()}s` : 'Users'}
+                    </h1>
                     <p className="text-muted-foreground">Manage system users and roles.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -169,6 +180,38 @@ export default function UsersPage() {
                         />
                     </div>
                 </div>
+            </div>
+
+            {/* Role Filter Buttons */}
+            <div className="flex gap-2 flex-wrap">
+                <Button
+                    variant={!roleFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setRoleFilter(undefined); setPage(1); }}
+                >
+                    All Users
+                </Button>
+                <Button
+                    variant={roleFilter === "PATIENT" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setRoleFilter("PATIENT"); setPage(1); }}
+                >
+                    Patients
+                </Button>
+                <Button
+                    variant={roleFilter === "DOCTOR" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setRoleFilter("DOCTOR"); setPage(1); }}
+                >
+                    Doctors
+                </Button>
+                <Button
+                    variant={roleFilter === "ADMIN" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setRoleFilter("ADMIN"); setPage(1); }}
+                >
+                    Admins
+                </Button>
             </div>
 
             <DataTable
