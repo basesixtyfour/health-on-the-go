@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface Consultation {
     id: string;
@@ -13,15 +12,22 @@ interface Consultation {
     specialty: string;
     status: string;
     createdAt: string;
+    scheduledStartAt: string | null;
 }
 
-export default function ConsultationsPage() {
+interface ConsultationsPageProps {
+    initialStatus?: string;
+    initialFilter?: string; // 'today' for today's appointments
+}
+
+export default function ConsultationsPage({ initialStatus, initialFilter }: ConsultationsPageProps) {
     const [consultations, setConsultations] = useState<Consultation[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [limit] = useState(10);
     const [totalPages, setTotalPages] = useState(1);
-    const [statusFilter, setStatusFilter] = useState("");
+    const [statusFilter, setStatusFilter] = useState(initialStatus || "");
+    const [todayFilter, setTodayFilter] = useState(initialFilter === "today");
 
     async function fetchConsultations() {
         try {
@@ -29,8 +35,13 @@ export default function ConsultationsPage() {
             const params = new URLSearchParams({
                 page: page.toString(),
                 limit: limit.toString(),
-                ...(statusFilter && { status: statusFilter })
             });
+            if (statusFilter) {
+                params.set('status', statusFilter);
+            }
+            if (todayFilter) {
+                params.set('today', 'true');
+            }
             const res = await fetch(`/api/v1/admin/consultations?${params}`);
             if (!res.ok) throw new Error("Failed to fetch consultations");
             const raw = await res.json();
@@ -45,13 +56,21 @@ export default function ConsultationsPage() {
 
     useEffect(() => {
         fetchConsultations();
-    }, [page, statusFilter]);
+    }, [page, statusFilter, todayFilter]);
+
+    // Determine title based on filters
+    const getTitle = () => {
+        if (todayFilter) return "Today's Appointments";
+        if (statusFilter === "PAID") return "Paid Consultations";
+        if (statusFilter === "PAYMENT_PENDING") return "Pending Payments";
+        return "Consultations";
+    };
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Consultations</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">{getTitle()}</h1>
                     <p className="text-muted-foreground">View and manage system consultations.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -74,6 +93,45 @@ export default function ConsultationsPage() {
                 </div>
             </div>
 
+            {/* Filter Buttons */}
+            <div className="flex gap-2 flex-wrap">
+                <Button
+                    variant={!todayFilter && !statusFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setTodayFilter(false); setStatusFilter(""); setPage(1); }}
+                >
+                    All
+                </Button>
+                <Button
+                    variant={todayFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setTodayFilter(true); setStatusFilter(""); setPage(1); }}
+                >
+                    Today
+                </Button>
+                <Button
+                    variant={statusFilter === "PAID" && !todayFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setTodayFilter(false); setStatusFilter("PAID"); setPage(1); }}
+                >
+                    Paid
+                </Button>
+                <Button
+                    variant={statusFilter === "PAYMENT_PENDING" && !todayFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setTodayFilter(false); setStatusFilter("PAYMENT_PENDING"); setPage(1); }}
+                >
+                    Pending Payment
+                </Button>
+                <Button
+                    variant={statusFilter === "COMPLETED" && !todayFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setTodayFilter(false); setStatusFilter("COMPLETED"); setPage(1); }}
+                >
+                    Completed
+                </Button>
+            </div>
+
             <DataTable
                 loading={loading}
                 data={consultations}
@@ -89,12 +147,17 @@ export default function ConsultationsPage() {
                         header: "Status",
                         accessorKey: "status",
                         cell: (c) => (
-                            <Badge variant={c.status === "COMPLETED" ? "default" : c.status === "CANCELLED" ? "destructive" : "secondary"}>
+                            <Badge variant={c.status === "COMPLETED" ? "default" : c.status === "CANCELLED" ? "destructive" : c.status === "PAID" ? "default" : "secondary"}>
                                 {c.status}
                             </Badge>
                         )
                     },
-                    { header: "Created At", cell: (c) => new Date(c.createdAt).toLocaleDateString() }
+                    {
+                        header: "Scheduled",
+                        cell: (c) => c.scheduledStartAt
+                            ? new Date(c.scheduledStartAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })
+                            : <span className="text-muted-foreground">-</span>
+                    }
                 ]}
             />
         </div>

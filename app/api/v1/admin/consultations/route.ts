@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     const statusParam = searchParams.get("status");
     const doctorId = searchParams.get("doctorId");
     const patientId = searchParams.get("patientId");
+    const todayFilter = searchParams.get("today") === "true";
 
     // Validate status parameter
     let status: ConsultationStatus | null = null;
@@ -52,6 +53,18 @@ export async function GET(request: NextRequest) {
     if (status) where.status = status;
     if (doctorId) where.doctorId = doctorId;
     if (patientId) where.patientId = patientId;
+
+    // Filter for today's consultations
+    if (todayFilter) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+        where.scheduledStartAt = {
+            gte: todayStart,
+            lte: todayEnd
+        };
+    }
 
     try {
         const [consultations, total] = await Promise.all([

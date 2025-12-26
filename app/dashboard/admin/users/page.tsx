@@ -3,7 +3,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import UsersPage from "@/components/admin/UsersPage";
 
-export default async function AdminUsersPage() {
+export default async function AdminUsersPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ role?: string; query?: string }>;
+}) {
     const session = await auth.api.getSession({
         headers: await headers(),
     });
@@ -12,5 +16,9 @@ export default async function AdminUsersPage() {
         redirect("/dashboard");
     }
 
-    return <UsersPage />;
+    const params = await searchParams;
+    const roleFilter = params.role as "PATIENT" | "DOCTOR" | "ADMIN" | undefined;
+    const searchQuery = params.query;
+
+    return <UsersPage initialRoleFilter={roleFilter} initialSearch={searchQuery} />;
 }
