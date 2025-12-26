@@ -37,7 +37,7 @@ export default function LoginPage() {
             <header className="p-6 flex justify-between items-center max-w-7xl mx-auto w-full">
                 <div className="flex items-center gap-2 text-blue-600 font-bold text-xl tracking-tight">
                     <Stethoscope className="h-7 w-7" />
-                    <span>VeersaHealth</span>
+                    <span>HealthGo</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border border-slate-200 px-3 py-1.5 rounded-full">
                     <ShieldCheck className="h-3.5 w-3.5 text-green-500" /> Secure Protocol v2.5
