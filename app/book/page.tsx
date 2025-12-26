@@ -6,7 +6,7 @@ export default async function BookingPage() {
     const { session } = await requireAuth();
 
     if (!session) {
-        redirect("/api/v1/auth/sign-in");
+        redirect("/");
     }
 
     return (

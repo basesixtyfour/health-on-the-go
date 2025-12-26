@@ -22,7 +22,9 @@ const mockCreatePaymentLink = jest.fn();
 jest.mock('@/lib/square', () => ({
     squareClient: {
         checkout: {
-            createPaymentLink: (...args: unknown[]) => mockCreatePaymentLink(...args),
+            paymentLinks: {
+                create: (...args: unknown[]) => mockCreatePaymentLink(...args),
+            },
         },
     },
 }));
@@ -108,6 +110,24 @@ describe('POST /api/v1/payments', () => {
             expect(response.status).toBe(403);
         });
 
+        it('should return 400 when consultation status is invalid (e.g. CANCELLED)', async () => {
+            const patient = createMockUser();
+            mockGetSession.mockResolvedValue(createMockSession(patient));
+
+            const consultation = createMockConsultation({
+                patientId: patient.id,
+                status: ConsultationStatus.CANCELLED
+            });
+            prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+
+            const request = createRequest({ consultationId: consultation.id });
+            const response = await POST(request);
+
+            expect(response.status).toBe(400);
+            const body = await response.json();
+            expect(body.error.message).toContain('CANCELLED');
+        });
+
         it('should return 409 when payment already exists', async () => {
             const patient = createMockUser();
             mockGetSession.mockResolvedValue(createMockSession(patient));
@@ -135,12 +155,10 @@ describe('POST /api/v1/payments', () => {
             prismaMock.payment.findFirst.mockResolvedValue(null); // No existing payment
 
             mockCreatePaymentLink.mockResolvedValue({
-                result: {
-                    paymentLink: {
-                        id: 'pl_123',
-                        url: 'https://square.com/pay/pl_123',
-                        order_id: 'order_123'
-                    }
+                paymentLink: {
+                    id: 'pl_123',
+                    url: 'https://square.com/pay/pl_123',
+                    orderId: 'order_123'
                 }
             });
 
@@ -152,6 +170,7 @@ describe('POST /api/v1/payments', () => {
 
             const request = createRequest({ consultationId: consultation.id });
             const response = await POST(request);
+
 
             expect(response.status).toBe(201);
             const body = await response.json();
