@@ -13,45 +13,59 @@ export default async function DoctorDashboard() {
     if (!session) {
         redirect("/");
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Use UTC for consistent timezone handling
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const tomorrowUTC = new Date(todayUTC);
+    tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
 
     const doctorId = session.user.id;
 
-    const [appointmentsToday, pendingConsultations, totalPatients, totalConsultations] = await Promise.all([
-        // Appointments today (IN_CALL or PAID/scheduled)
-        prisma.consultation.count({
-            where: {
-                doctorId: doctorId,
-                scheduledStartAt: {
-                    gte: today,
-                    lt: tomorrow
+    // Default values in case of DB errors
+    let appointmentsToday = 0;
+    let pendingConsultations = 0;
+    let totalPatients = 0;
+    let totalConsultations = 0;
+
+    try {
+        const results = await Promise.all([
+            // Appointments today (IN_CALL or PAID/scheduled)
+            prisma.consultation.count({
+                where: {
+                    doctorId: doctorId,
+                    scheduledStartAt: {
+                        gte: todayUTC,
+                        lt: tomorrowUTC
+                    }
                 }
-            }
-        }),
-        // Pending consults (PAYMENT_PENDING or PAID but not started)
-        prisma.consultation.count({
-            where: {
-                doctorId: doctorId,
-                status: { in: ["PAYMENT_PENDING", "PAID"] }
-            }
-        }),
-        // Unique patients (approximate count of unique patientIds)
-        prisma.consultation.findMany({
-            where: { doctorId: doctorId },
-            select: { patientId: true },
-            distinct: ['patientId']
-        }).then(res => res.length),
-        // Completed consultations
-        prisma.consultation.count({
-            where: {
-                doctorId: doctorId,
-                status: "COMPLETED"
-            }
-        })
-    ]);
+            }),
+            // Pending consults (PAYMENT_PENDING or PAID but not started)
+            prisma.consultation.count({
+                where: {
+                    doctorId: doctorId,
+                    status: { in: ["PAYMENT_PENDING", "PAID"] }
+                }
+            }),
+            // Unique patients - efficient count using raw SQL
+            prisma.$queryRaw<[{ count: bigint }]>`
+                SELECT COUNT(DISTINCT "patientId") as count 
+                FROM "Consultation" 
+                WHERE "doctorId" = ${doctorId}
+            `.then(res => Number(res[0]?.count ?? 0)),
+            // Completed consultations
+            prisma.consultation.count({
+                where: {
+                    doctorId: doctorId,
+                    status: "COMPLETED"
+                }
+            })
+        ]);
+
+        [appointmentsToday, pendingConsultations, totalPatients, totalConsultations] = results;
+    } catch (error) {
+        console.error("Doctor Dashboard: Failed to fetch stats", error);
+        // Continue with default values (0s) so page still renders
+    }
 
     return (
         <div className="space-y-6">
