@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { ConsultationStatus } from "@/app/generated/prisma/client";
 import { squareClient } from "@/lib/square";
 import { randomUUID } from "crypto";
 import {
@@ -58,6 +59,17 @@ export async function POST(request: NextRequest) {
                 ErrorCodes.FORBIDDEN,
                 "You are not authorized to pay for this consultation",
                 403
+            );
+        }
+
+        // Validate Consultation Status
+        const validStatuses: ConsultationStatus[] = [ConsultationStatus.CREATED, ConsultationStatus.PAYMENT_FAILED];
+        if (!validStatuses.includes(consultation.status)) {
+            return errorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                `Payment cannot be initiated for a consultation in ${consultation.status} status`,
+                400,
+                { currentStatus: consultation.status, validStatuses }
             );
         }
         // 4. Check for Existing Payments (Idempotency/Duplication)
@@ -159,7 +171,6 @@ export async function POST(request: NextRequest) {
             ErrorCodes.INTERNAL_ERROR,
             `Failed to initialize payment gateway: ${error instanceof Error ? error.message : 'Unknown error'}`,
             500,
-            { originalError: error instanceof Error ? error.stack : error }
         );
     }
 }
