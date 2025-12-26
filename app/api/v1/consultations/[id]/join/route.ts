@@ -9,7 +9,7 @@
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createMeetingToken, createRoom } from "@/lib/daily";
+import { createMeetingToken, createRoom, deleteRoom } from "@/lib/daily";
 import {
   errorResponse,
   successResponse,
@@ -133,24 +133,45 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       const roomName = `consult_${consultationId}_${Date.now()}`;
       const room = await createRoom(roomName, TOKEN_EXPIRY_MINUTES);
 
-      // Save video session to database
-      videoSession = await prisma.videoSession.create({
-        data: {
-          consultationId,
-          provider: "DAILY",
-          roomName: room.name,
-          roomUrl: room.url,
-        },
-      });
+      try {
+        // Save video session + update consultation atomically
+        videoSession = await prisma.$transaction(async (tx) => {
+          const createdSession = await tx.videoSession.create({
+            data: {
+              consultationId,
+              provider: "DAILY",
+              roomName: room.name,
+              roomUrl: room.url,
+            },
+          });
 
-      // Update consultation status to IN_CALL
-      await prisma.consultation.update({
-        where: { id: consultationId },
-        data: {
-          status: ConsultationStatus.IN_CALL,
-          startedAt: new Date(),
-        },
-      });
+          await tx.consultation.update({
+            where: { id: consultationId },
+            data: {
+              status: ConsultationStatus.IN_CALL,
+              startedAt: new Date(),
+            },
+          });
+
+          return createdSession;
+        });
+      } catch (err) {
+        // DB transaction failed; clean up created Daily room to avoid orphans.
+        try {
+          await deleteRoom(room.name);
+        } catch (cleanupErr) {
+          console.error(
+            "Failed to delete Daily room after transaction failure:",
+            cleanupErr
+          );
+        }
+
+        console.error(
+          "Failed to persist video session / consultation update; Daily room cleaned up:",
+          err
+        );
+        throw err;
+      }
     }
 
     // Determine if user is owner (doctor or admin gets owner privileges)
