@@ -75,37 +75,38 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
             );
         }
 
-        // Check consultation status - must be IN_CALL to close
-        if (consultation.status !== ConsultationStatus.IN_CALL) {
-            return errorResponse(
-                ErrorCodes.VALIDATION_ERROR,
-                `Cannot close consultation with status: ${consultation.status}. Consultation must be IN_CALL.`,
-                400,
-                {
-                    currentStatus: consultation.status,
-                    requiredStatus: ConsultationStatus.IN_CALL,
-                }
-            );
-        }
-
-        // Update consultation status to COMPLETED
+        // Update consultation status to COMPLETED atomically
+        // Using updateMany with status condition to prevent race conditions
         const result = await prisma.$transaction(async (tx) => {
-            const updated = await tx.consultation.update({
-                where: { id: consultationId },
+            const updateResult = await tx.consultation.updateMany({
+                where: {
+                    id: consultationId,
+                    status: ConsultationStatus.IN_CALL,
+                },
                 data: {
                     status: ConsultationStatus.COMPLETED,
                     endedAt: new Date(),
                 },
             });
 
-            // Create audit event
+            // Check if any rows were updated
+            if (updateResult.count === 0) {
+                throw new Error('STATUS_MISMATCH');
+            }
+
+            // Fetch the updated consultation for response
+            const updated = await tx.consultation.findUnique({
+                where: { id: consultationId },
+            });
+
+            // Create audit event after confirming update succeeded
             await tx.auditEvent.create({
                 data: {
                     actorUserId: user.id,
                     consultationId: consultationId,
                     eventType: "CONSULTATION_CLOSED",
                     eventMetadata: {
-                        from: consultation.status,
+                        from: ConsultationStatus.IN_CALL,
                         to: ConsultationStatus.COMPLETED,
                         closedBy: user.role,
                     },
@@ -130,6 +131,18 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
             message: "Consultation ended successfully",
         });
     } catch (error) {
+        // Handle STATUS_MISMATCH from transaction
+        if (error instanceof Error && error.message === 'STATUS_MISMATCH') {
+            return errorResponse(
+                ErrorCodes.INVALID_STATUS_TRANSITION,
+                "Cannot close consultation: status is not IN_CALL. The consultation may have already been closed or its status changed.",
+                400,
+                {
+                    requiredStatus: ConsultationStatus.IN_CALL,
+                }
+            );
+        }
+
         console.error("Error closing consultation:", error);
         return errorResponse(
             ErrorCodes.INTERNAL_ERROR,
