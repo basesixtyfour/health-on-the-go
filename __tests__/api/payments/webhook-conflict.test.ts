@@ -63,7 +63,10 @@ describe("POST /api/v1/payments/webhook (conflict handling)", () => {
     });
 
     const notificationUrl = process.env.NEXT_PUBLIC_BASE_URL + "/api/v1/payments/webhook";
-    const signature = createHmac("sha256", process.env.SQUARE_WEBHOOK_SIGNATURE_KEY!)
+    const signature = createHmac(
+      "sha256",
+      Buffer.from(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY!, "base64")
+    )
       .update(notificationUrl + body)
       .digest("base64");
 
