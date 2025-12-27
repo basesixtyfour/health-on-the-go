@@ -90,25 +90,25 @@ export default async function PaymentSuccessPage({
     if (!payment) {
       errorMessage = "No payment record found for this consultation.";
     } else if (payment.status === PaymentStatus.PAID) {
-      // Payment succeeded at the provider, but consultation confirmation may have failed due to slot conflict.
-      // Do NOT force-set consultation status to PAID here.
+      // Payment is already paid - ensure consultation is also marked as PAID
       if (
-        payment.consultation.status === ConsultationStatus.PAID ||
-        payment.consultation.status === ConsultationStatus.IN_CALL ||
-        payment.consultation.status === ConsultationStatus.COMPLETED
+        payment.consultation.status !== ConsultationStatus.PAID &&
+        payment.consultation.status !== ConsultationStatus.IN_CALL &&
+        payment.consultation.status !== ConsultationStatus.COMPLETED
       ) {
-        paymentVerified = true;
-        consultationDetails = {
-          id: consultationId,
-          doctorName: payment.consultation.doctor?.name || "Your Doctor",
-          specialty: payment.consultation.specialty,
-          scheduledStartAt: payment.consultation.scheduledStartAt,
-          amountPaid: Number(payment.amount) / 100, // Convert cents to dollars
-        };
-      } else {
-        errorMessage =
-          "This slot was taken while your payment was processing. Please pick a different slot.";
+        await prisma.consultation.update({
+          where: { id: consultationId },
+          data: { status: ConsultationStatus.PAID },
+        });
       }
+      paymentVerified = true;
+      consultationDetails = {
+        id: consultationId,
+        doctorName: payment.consultation.doctor?.name || "Your Doctor",
+        specialty: payment.consultation.specialty,
+        scheduledStartAt: payment.consultation.scheduledStartAt,
+        amountPaid: Number(payment.amount) / 100, // Convert cents to dollars
+      };
     } else if (payment.providerOrderId) {
       // Payment is PENDING - verify with Square API before updating
       try {
@@ -121,16 +121,9 @@ export default async function PaymentSuccessPage({
         const isCompleted = order?.state === "COMPLETED";
 
         if (hasTenders || isCompleted) {
-          // Mark payment as PAID, but do not blindly force consultation to PAID; webhook may have set PAYMENT_FAILED on slot conflict.
-          await prisma.payment.update({
-            where: { id: payment.id },
-            data: {
-              status: PaymentStatus.PAID,
-              paidAt: new Date(),
-            },
-          });
-
-          const refreshed = await prisma.consultation.findUnique({
+          // Payment is confirmed by Square API. Now we need to update both payment AND consultation.
+          // First, check if webhook already handled it (consultation might already be PAID or PAYMENT_FAILED).
+          const currentConsultation = await prisma.consultation.findUnique({
             where: { id: consultationId },
             select: {
               status: true,
@@ -141,23 +134,82 @@ export default async function PaymentSuccessPage({
           });
 
           if (
-            refreshed?.status === ConsultationStatus.PAID ||
-            refreshed?.status === ConsultationStatus.IN_CALL ||
-            refreshed?.status === ConsultationStatus.COMPLETED
+            currentConsultation?.status === ConsultationStatus.PAID ||
+            currentConsultation?.status === ConsultationStatus.IN_CALL ||
+            currentConsultation?.status === ConsultationStatus.COMPLETED
           ) {
+            // Webhook already processed this - just update payment if needed and show success
+            await prisma.payment.update({
+              where: { id: payment.id },
+              data: {
+                status: PaymentStatus.PAID,
+                paidAt: new Date(),
+              },
+            });
+
             paymentVerified = true;
             consultationDetails = {
               id: consultationId,
-              doctorName: refreshed?.doctor?.name || "Your Doctor",
-              specialty: refreshed?.specialty || payment.consultation.specialty,
+              doctorName: currentConsultation?.doctor?.name || "Your Doctor",
+              specialty:
+                currentConsultation?.specialty ||
+                payment.consultation.specialty,
               scheduledStartAt:
-                refreshed?.scheduledStartAt ??
+                currentConsultation?.scheduledStartAt ??
                 payment.consultation.scheduledStartAt,
               amountPaid: Number(payment.amount) / 100,
             };
-          } else {
+          } else if (
+            currentConsultation?.status === ConsultationStatus.PAYMENT_FAILED
+          ) {
+            // Webhook already detected a slot conflict
             errorMessage =
               "This slot was taken while your payment was processing. Please pick a different slot.";
+          } else {
+            // Webhook hasn't processed yet - update both payment AND consultation status
+            // The consultation is likely still in CREATED or PAYMENT_PENDING status
+            try {
+              await prisma.$transaction([
+                prisma.payment.update({
+                  where: { id: payment.id },
+                  data: {
+                    status: PaymentStatus.PAID,
+                    paidAt: new Date(),
+                  },
+                }),
+                prisma.consultation.update({
+                  where: { id: consultationId },
+                  data: { status: ConsultationStatus.PAID },
+                }),
+              ]);
+
+              paymentVerified = true;
+              consultationDetails = {
+                id: consultationId,
+                doctorName: currentConsultation?.doctor?.name || "Your Doctor",
+                specialty:
+                  currentConsultation?.specialty ||
+                  payment.consultation.specialty,
+                scheduledStartAt:
+                  currentConsultation?.scheduledStartAt ??
+                  payment.consultation.scheduledStartAt,
+                amountPaid: Number(payment.amount) / 100,
+              };
+            } catch (updateErr: unknown) {
+              // If there's a unique constraint violation (slot taken by another booking),
+              // mark consultation as PAYMENT_FAILED
+              const err = updateErr as { code?: string };
+              if (err?.code === "P2002") {
+                await prisma.consultation.update({
+                  where: { id: consultationId },
+                  data: { status: ConsultationStatus.PAYMENT_FAILED },
+                });
+                errorMessage =
+                  "This slot was taken while your payment was processing. Please pick a different slot.";
+              } else {
+                throw updateErr;
+              }
+            }
           }
         } else {
           isPending = true;
@@ -238,7 +290,7 @@ export default async function PaymentSuccessPage({
               href="/book"
               className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition"
             >
-              Pick a Different Slot
+              Try Again
             </Link>
           </div>
         </div>
@@ -290,7 +342,7 @@ export default async function PaymentSuccessPage({
 
   // Success state with full appointment details
   return (
-    <div className="min-h-screen bg-linear-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-6">
       <div className="max-w-lg w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
         {/* Success Header */}
         <div className="text-center space-y-4">
@@ -310,7 +362,7 @@ export default async function PaymentSuccessPage({
         {/* Appointment Details Card */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
           {/* Doctor Info Header */}
-          <div className="bg-linear-to-r from-blue-600 to-blue-700 p-6 text-white">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center">
                 <User className="h-7 w-7" />
