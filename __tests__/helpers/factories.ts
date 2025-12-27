@@ -3,25 +3,10 @@
  * These avoid direct Prisma imports to prevent module resolution issues in Jest
  */
 
-// Define enums locally to match Prisma schema (avoids import issues in tests)
-export enum UserRole {
-  PATIENT = 'PATIENT',
-  DOCTOR = 'DOCTOR',
-  ADMIN = 'ADMIN',
-}
+import { UserRole, ConsultationStatus, MockSessionUser } from './types';
 
-export enum ConsultationStatus {
-  CREATED = 'CREATED',
-  PAYMENT_PENDING = 'PAYMENT_PENDING',
-  PAID = 'PAID',
-  IN_CALL = 'IN_CALL',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED',
-  EXPIRED = 'EXPIRED',
-  PAYMENT_FAILED = 'PAYMENT_FAILED',
-}
-
-import { MockSessionUser } from './auth-mock';
+// Re-export for backwards compatibility
+export { UserRole, ConsultationStatus };
 
 let idCounter = 0;
 
