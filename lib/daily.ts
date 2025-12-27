@@ -122,7 +122,8 @@ export async function createMeetingToken(
         enable_screenshare: true,
         start_video_off: false,
         start_audio_off: false,
-        // Owners (doctors) automatically have transcription permission via is_owner
+        // Auto-start transcription when owner (doctor) joins, enabling live captions
+        auto_start_transcription: isOwner,
       },
     }),
   });
