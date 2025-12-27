@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ConsultationStatus } from "@/app/generated/prisma/client";
 import { squareClient } from "@/lib/square";
-import { randomUUID } from "crypto";
 import {
     errorResponse,
     successResponse,
@@ -115,7 +114,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
         if (!baseUrl) {
             console.error("Missing NEXT_PUBLIC_BASE_URL");
             return errorResponse(
@@ -127,7 +126,8 @@ export async function POST(request: NextRequest) {
 
         // 5. Prepare Payment Link - Use dynamic pricing based on specialty
         const { getSpecialtyPrice } = await import("@/lib/constants");
-        const amountInCents = getSpecialtyPrice(consultation.specialty) * 100; // Convert dollars to cents
+        // Use Math.round to avoid floating-point precision issues (e.g., 99.99 * 100 = 9998.9999...)
+        const amountInCents = Math.round(getSpecialtyPrice(consultation.specialty) * 100);
         const redirectUrl = new URL("/checkout/success", baseUrl);
         redirectUrl.searchParams.set("id", consultationId);
 
@@ -157,10 +157,12 @@ export async function POST(request: NextRequest) {
         }
 
         // 6. Call Square SDK
+        // Use deterministic idempotency key for proper retry behavior
+        const idempotencyKey = `payment-${consultationId}`;
         let result;
         try {
             result = await squareClient.checkout.paymentLinks.create({
-                idempotencyKey: randomUUID(),
+                idempotencyKey,
                 order: {
                     locationId: locationId,
                     lineItems: [
