@@ -93,16 +93,15 @@ export default function VideoPage() {
 
     // Handle end consultation (doctor only)
     const handleEndConsultation = useCallback(async () => {
-        if (!consultationId || isEnding) return;
+        if (!consultationId) return;
 
         setIsEnding(true);
         try {
-            const response = await fetch(`/api/v1/consultations/${consultationId}`, {
-                method: 'PATCH',
+            const response = await fetch(`/api/v1/consultations/${consultationId}/close`, {
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ status: 'COMPLETED' }),
             });
 
             if (response.ok) {
@@ -116,7 +115,7 @@ export default function VideoPage() {
             alert('Failed to end consultation. Please try again.');
             setIsEnding(false);
         }
-    }, [consultationId, router, isEnding]);
+    }, [consultationId, router]);
 
     // Loading state
     if (state.status === 'loading') {
