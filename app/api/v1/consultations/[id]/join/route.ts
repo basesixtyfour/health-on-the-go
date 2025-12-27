@@ -209,6 +209,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       roomUrl: videoSession.roomUrl,
       token,
       expiresAt: expiresAt.toISOString(),
+      userRole: user.role,
+      isDoctor,
     });
   } catch (error) {
     console.error("Error joining consultation:", error);
