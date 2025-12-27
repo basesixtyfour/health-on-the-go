@@ -44,13 +44,15 @@ export function TimeSlotSelection({ specialty, doctorId, onSelect, onBack }: Tim
 
                 if (!res.ok) {
                     const errData = await res.json().catch(() => ({}));
-                    throw new Error(errData.message || "Failed to fetch slots");
+                    // Handle API error response structure: { error: { message: "..." } }
+                    const errorMessage = errData.error?.message || errData.message || "Failed to fetch available time slots";
+                    throw new Error(errorMessage);
                 }
                 const data = await res.json();
                 setSlots(data.slots || []);
             } catch (err) {
-                console.error(err);
-                setError(err instanceof Error ? err.message : "Unable to load time slots.");
+                console.error("Error fetching slots:", err);
+                setError(err instanceof Error ? err.message : "Unable to load time slots. Please try again.");
             } finally {
                 setLoading(false);
             }
