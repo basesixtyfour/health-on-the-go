@@ -10,6 +10,18 @@ import { createMockSession } from '../../helpers/auth-mock';
 import { prismaMock, resetPrismaMock, setupPrismaMock } from '../../helpers/prisma-mock';
 import { DateTime } from 'luxon';
 
+// Mock Redis helper - prevent real Redis connections
+const mockRedisGet = jest.fn();
+const mockRedisMGet = jest.fn();
+jest.mock('@/lib/redis', () => ({
+  getRedis: async () => ({
+    get: (...args: unknown[]) => mockRedisGet(...args),
+    mGet: (...args: unknown[]) => mockRedisMGet(...args),
+  }),
+  slotLockKey: (doctorId: string, scheduledStartAtMs: number) =>
+    `slotlock:${doctorId}:${scheduledStartAtMs}`,
+}));
+
 // Mock auth module
 const mockGetSession = jest.fn();
 jest.mock('@/lib/auth', () => ({
@@ -29,6 +41,10 @@ describe('GET /api/v1/doctors/availability', () => {
     resetPrismaMock();
     setupPrismaMock();
     mockGetSession.mockReset();
+    mockRedisGet.mockReset();
+    mockRedisMGet.mockReset();
+    // Default: no slots are locked
+    mockRedisMGet.mockResolvedValue([]);
   });
 
   /**

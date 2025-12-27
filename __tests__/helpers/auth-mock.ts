@@ -1,19 +1,7 @@
-import { UserRole } from './factories';
+import { UserRole, MockSessionUser } from './types';
 
-/**
- * Mock session user for testing
- */
-export interface MockSessionUser {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  emailVerified: boolean;
-  image: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  doctorProfile?: any; // Allow mocking doctor details
-}
+// Re-export for backwards compatibility
+export type { MockSessionUser };
 
 /**
  * Creates a mock session object for testing

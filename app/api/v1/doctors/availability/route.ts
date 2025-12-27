@@ -28,6 +28,7 @@ import {
 } from "@/lib/api-utils";
 import { UserRole, ConsultationStatus } from "@/app/generated/prisma/client";
 import { DateTime } from "luxon";
+import { getRedis, slotLockKey } from "@/lib/redis";
 
 const WORKING_HOURS_START = 9;
 const WORKING_HOURS_END = 17;
@@ -336,10 +337,23 @@ export async function GET(request: NextRequest) {
       });
 
       const now = Date.now();
+      // Redis slot locks (best-effort). If Redis is unavailable, we proceed without lock-awareness.
+      const redis = await getRedis();
+      const lockedKeys = new Set<string>();
+      if (redis && timeSlots.length > 0) {
+        const keys = timeSlots.map((s) =>
+          slotLockKey(doctor.id, s.startTime.getTime())
+        );
+        const values = await redis.mGet(keys);
+        for (let i = 0; i < values.length; i++) {
+          if (values[i]) lockedKeys.add(keys[i]);
+        }
+      }
       const slots = timeSlots.map((slot) => ({
         ...slot,
         available:
           !bookedTimes.has(slot.startTime.getTime()) &&
+          !lockedKeys.has(slotLockKey(doctor.id, slot.startTime.getTime())) &&
           slot.startTime.getTime() > now,
         doctorId: doctor.id,
       }));
@@ -448,15 +462,36 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build availability for each doctor using their own bounds and timezone
-    const doctorAvailability = doctors.map((doctor) => {
+    // Pre-generate slots per doctor and batch-check Redis locks (single mget)
+    const slotsByDoctorId = new Map<string, { startTime: Date; endTime: Date }[]>();
+    const allLockKeys: string[] = [];
+    for (const doctor of doctors) {
       const doctorTimezone = doctor.doctorProfile?.timezone ?? "UTC";
-      const bookedTimes = bookedTimesByDoctor.get(doctor.id) ?? new Set();
       const timeSlots = generateDoctorSlotsForPatientDayUTCWindow({
         doctorTimezone,
         patientDayStartUTC: patientDayBounds.patientDayStartUTC,
         patientDayEndUTC: patientDayBounds.patientDayEndUTC,
       });
+      slotsByDoctorId.set(doctor.id, timeSlots);
+      for (const s of timeSlots) {
+        allLockKeys.push(slotLockKey(doctor.id, s.startTime.getTime()));
+      }
+    }
+
+    const lockedKeys = new Set<string>();
+    const redis = await getRedis();
+    if (redis && allLockKeys.length > 0) {
+      const values = await redis.mGet(allLockKeys);
+      for (let i = 0; i < values.length; i++) {
+        if (values[i]) lockedKeys.add(allLockKeys[i]);
+      }
+    }
+
+    // Build availability for each doctor using their own bounds and timezone
+    const doctorAvailability = doctors.map((doctor) => {
+      const doctorTimezone = doctor.doctorProfile?.timezone ?? "UTC";
+      const bookedTimes = bookedTimesByDoctor.get(doctor.id) ?? new Set();
+      const timeSlots = slotsByDoctorId.get(doctor.id) ?? [];
 
       const now = Date.now();
       return {
@@ -469,6 +504,7 @@ export async function GET(request: NextRequest) {
           ...slot,
           available:
             !bookedTimes.has(slot.startTime.getTime()) &&
+            !lockedKeys.has(slotLockKey(doctor.id, slot.startTime.getTime())) &&
             slot.startTime.getTime() > now,
           doctorId: doctor.id,
         })),

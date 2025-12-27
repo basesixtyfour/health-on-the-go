@@ -1,16 +1,28 @@
-import React from 'react';
-import Link from 'next/link';
-import { headers } from 'next/headers';
-import { CheckCircle2, Video, AlertCircle, Clock, Calendar, User, Stethoscope, CalendarPlus } from 'lucide-react';
-import { prisma } from '@/lib/prisma';
-import { squareClient } from '@/lib/square';
-import { ConsultationStatus, PaymentStatus } from '@/app/generated/prisma/client';
-import { format } from 'date-fns';
-import { getSpecialtyPrice, SPECIALTIES } from '@/lib/constants';
+import React from "react";
+import Link from "next/link";
+import { headers } from "next/headers";
+import {
+  CheckCircle2,
+  Video,
+  AlertCircle,
+  Clock,
+  Calendar,
+  User,
+  Stethoscope,
+  CalendarPlus,
+} from "lucide-react";
+import { prisma } from "@/lib/prisma";
+import { squareClient } from "@/lib/square";
+import {
+  ConsultationStatus,
+  PaymentStatus,
+} from "@/app/generated/prisma/client";
+import { format } from "date-fns";
+import { getSpecialtyPrice, SPECIALTIES } from "@/lib/constants";
 
 /**
  * Payment Success / Appointment Confirmation Page
- * 
+ *
  * This page is shown after Square redirects back from checkout.
  * It VERIFIES the payment with Square API before updating status.
  * Shows full appointment details after successful payment.
@@ -26,18 +38,25 @@ export default async function PaymentSuccessPage({
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="bg-white p-8 rounded-2xl shadow-xl text-center">
-          <h1 className="text-xl font-bold text-red-600 mb-2">Invalid Session</h1>
+          <h1 className="text-xl font-bold text-red-600 mb-2">
+            Invalid Session
+          </h1>
           <p className="text-slate-600">No consultation ID provided.</p>
-          <Link href="/dashboard" className="text-blue-600 hover:underline mt-4 block">Return to Dashboard</Link>
+          <Link
+            href="/dashboard"
+            className="text-blue-600 hover:underline mt-4 block"
+          >
+            Return to Dashboard
+          </Link>
         </div>
       </div>
-    )
+    );
   }
 
   // Verify and update payment status
   let paymentVerified = false;
   let isPending = false;
-  let errorMessage = '';
+  let errorMessage = "";
   let consultationDetails: {
     id: string;
     doctorName: string;
@@ -51,7 +70,7 @@ export default async function PaymentSuccessPage({
     const payment = await prisma.payment.findFirst({
       where: {
         consultationId,
-        status: { in: [PaymentStatus.PENDING, PaymentStatus.PAID] }
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.PAID] },
       },
       include: {
         consultation: {
@@ -61,77 +80,98 @@ export default async function PaymentSuccessPage({
             specialty: true,
             scheduledStartAt: true,
             doctor: {
-              select: { name: true }
-            }
-          }
-        }
-      }
+              select: { name: true },
+            },
+          },
+        },
+      },
     });
 
     if (!payment) {
-      errorMessage = 'No payment record found for this consultation.';
+      errorMessage = "No payment record found for this consultation.";
     } else if (payment.status === PaymentStatus.PAID) {
-      // Payment is already paid - ensure consultation is also marked as PAID
-      if (payment.consultation.status !== ConsultationStatus.PAID &&
-        payment.consultation.status !== ConsultationStatus.IN_CALL &&
-        payment.consultation.status !== ConsultationStatus.COMPLETED) {
-        await prisma.consultation.update({
-          where: { id: consultationId },
-          data: { status: ConsultationStatus.PAID }
-        });
+      // Payment succeeded at the provider, but consultation confirmation may have failed due to slot conflict.
+      // Do NOT force-set consultation status to PAID here.
+      if (
+        payment.consultation.status === ConsultationStatus.PAID ||
+        payment.consultation.status === ConsultationStatus.IN_CALL ||
+        payment.consultation.status === ConsultationStatus.COMPLETED
+      ) {
+        paymentVerified = true;
+        consultationDetails = {
+          id: consultationId,
+          doctorName: payment.consultation.doctor?.name || "Your Doctor",
+          specialty: payment.consultation.specialty,
+          scheduledStartAt: payment.consultation.scheduledStartAt,
+          amountPaid: Number(payment.amount) / 100, // Convert cents to dollars
+        };
+      } else {
+        errorMessage =
+          "This slot was taken while your payment was processing. Please pick a different slot.";
       }
-      paymentVerified = true;
-      consultationDetails = {
-        id: consultationId,
-        doctorName: payment.consultation.doctor?.name || 'Your Doctor',
-        specialty: payment.consultation.specialty,
-        scheduledStartAt: payment.consultation.scheduledStartAt,
-        amountPaid: Number(payment.amount) / 100, // Convert cents to dollars
-      };
     } else if (payment.providerOrderId) {
       // Payment is PENDING - verify with Square API before updating
       try {
-        const orderResponse = await squareClient.orders.get({ orderId: payment.providerOrderId! });
+        const orderResponse = await squareClient.orders.get({
+          orderId: payment.providerOrderId!,
+        });
         const order = orderResponse.order;
 
         const hasTenders = order?.tenders && order.tenders.length > 0;
-        const isCompleted = order?.state === 'COMPLETED';
+        const isCompleted = order?.state === "COMPLETED";
 
         if (hasTenders || isCompleted) {
-          await prisma.$transaction([
-            prisma.payment.update({
-              where: { id: payment.id },
-              data: {
-                status: PaymentStatus.PAID,
-                paidAt: new Date()
-              }
-            }),
-            prisma.consultation.update({
-              where: { id: consultationId },
-              data: { status: ConsultationStatus.PAID }
-            })
-          ]);
-          paymentVerified = true;
-          consultationDetails = {
-            id: consultationId,
-            doctorName: payment.consultation.doctor?.name || 'Your Doctor',
-            specialty: payment.consultation.specialty,
-            scheduledStartAt: payment.consultation.scheduledStartAt,
-            amountPaid: Number(payment.amount) / 100,
-          };
+          // Mark payment as PAID, but do not blindly force consultation to PAID; webhook may have set PAYMENT_FAILED on slot conflict.
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: PaymentStatus.PAID,
+              paidAt: new Date(),
+            },
+          });
+
+          const refreshed = await prisma.consultation.findUnique({
+            where: { id: consultationId },
+            select: {
+              status: true,
+              specialty: true,
+              scheduledStartAt: true,
+              doctor: { select: { name: true } },
+            },
+          });
+
+          if (
+            refreshed?.status === ConsultationStatus.PAID ||
+            refreshed?.status === ConsultationStatus.IN_CALL ||
+            refreshed?.status === ConsultationStatus.COMPLETED
+          ) {
+            paymentVerified = true;
+            consultationDetails = {
+              id: consultationId,
+              doctorName: refreshed?.doctor?.name || "Your Doctor",
+              specialty: refreshed?.specialty || payment.consultation.specialty,
+              scheduledStartAt:
+                refreshed?.scheduledStartAt ??
+                payment.consultation.scheduledStartAt,
+              amountPaid: Number(payment.amount) / 100,
+            };
+          } else {
+            errorMessage =
+              "This slot was taken while your payment was processing. Please pick a different slot.";
+          }
         } else {
           isPending = true;
         }
       } catch (squareError) {
-        console.error('Square API verification error:', squareError);
+        console.error("Square API verification error:", squareError);
         isPending = true;
       }
     } else {
-      errorMessage = 'Payment record is incomplete. Please contact support.';
+      errorMessage = "Payment record is incomplete. Please contact support.";
     }
   } catch (error) {
-    console.error('Payment verification error:', error);
-    errorMessage = 'Unable to verify payment status. Please try again.';
+    console.error("Payment verification error:", error);
+    errorMessage = "Unable to verify payment status. Please try again.";
   }
 
   // Pending state - payment not yet confirmed by Square
@@ -143,14 +183,17 @@ export default async function PaymentSuccessPage({
             <Clock className="h-12 w-12 text-amber-600 animate-pulse" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-slate-900">Payment Processing</h1>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Payment Processing
+            </h1>
             <p className="text-slate-500">
               Your payment is being processed. This may take a moment.
             </p>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg space-y-4">
             <p className="text-sm text-slate-600">
-              If your payment was successful, please refresh this page in a few seconds.
+              If your payment was successful, please refresh this page in a few
+              seconds.
             </p>
             <div className="flex gap-4 justify-center">
               <Link
@@ -195,7 +238,7 @@ export default async function PaymentSuccessPage({
               href="/book"
               className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition"
             >
-              Try Again
+              Pick a Different Slot
             </Link>
           </div>
         </div>
@@ -204,65 +247,79 @@ export default async function PaymentSuccessPage({
   }
 
   // Get specialty label
-  const specialtyInfo = SPECIALTIES.find(s => s.id === consultationDetails?.specialty);
-  const specialtyLabel = specialtyInfo?.label || consultationDetails?.specialty || 'General Practice';
+  const specialtyInfo = SPECIALTIES.find(
+    (s) => s.id === consultationDetails?.specialty
+  );
+  const specialtyLabel =
+    specialtyInfo?.label ||
+    consultationDetails?.specialty ||
+    "General Practice";
 
   // Format date/time for display
   const appointmentDate = consultationDetails?.scheduledStartAt
-    ? format(consultationDetails.scheduledStartAt, 'EEEE, MMMM d, yyyy')
-    : '';
+    ? format(consultationDetails.scheduledStartAt, "EEEE, MMMM d, yyyy")
+    : "";
   const appointmentTime = consultationDetails?.scheduledStartAt
-    ? format(consultationDetails.scheduledStartAt, 'h:mm a')
-    : '';
+    ? format(consultationDetails.scheduledStartAt, "h:mm a")
+    : "";
 
   // Generate Google Calendar link
   // Get origin from headers for server-side rendering
   const headersList = await headers();
-  const host = headersList.get('host') || 'localhost:3000';
-  const protocol = headersList.get('x-forwarded-proto') || 'http';
+  const host = headersList.get("host") || "localhost:3000";
+  const protocol = headersList.get("x-forwarded-proto") || "http";
   const appOrigin = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
 
   const generateCalendarLink = () => {
-    if (!consultationDetails?.scheduledStartAt) return '#';
+    if (!consultationDetails?.scheduledStartAt) return "#";
     const start = consultationDetails.scheduledStartAt;
     const end = new Date(start.getTime() + 30 * 60000); // 30 min duration
 
-    const startStr = start.toISOString().replace(/-|:|\.\d{3}/g, '');
-    const endStr = end.toISOString().replace(/-|:|\.\d{3}/g, '');
+    const startStr = start.toISOString().replace(/-|:|\.\d{3}/g, "");
+    const endStr = end.toISOString().replace(/-|:|\.\d{3}/g, "");
 
-    const title = encodeURIComponent(`Telehealth Consultation - ${specialtyLabel}`);
-    const details = encodeURIComponent(`Your virtual consultation with Dr. ${consultationDetails.doctorName}.\n\nJoin link: ${appOrigin}/video/${consultationId}`);
+    const title = encodeURIComponent(
+      `Telehealth Consultation - ${specialtyLabel}`
+    );
+    const details = encodeURIComponent(
+      `Your virtual consultation with Dr. ${consultationDetails.doctorName}.\n\nJoin link: ${appOrigin}/video/${consultationId}`
+    );
 
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startStr}/${endStr}&details=${details}`;
   };
 
   // Success state with full appointment details
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-linear-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-6">
       <div className="max-w-lg w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-
         {/* Success Header */}
         <div className="text-center space-y-4">
           <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-200">
             <CheckCircle2 className="h-10 w-10 text-emerald-600" />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900">Booking Confirmed!</h1>
-            <p className="text-slate-500 mt-1">Your appointment has been scheduled</p>
+            <h1 className="text-3xl font-black text-slate-900">
+              Booking Confirmed!
+            </h1>
+            <p className="text-slate-500 mt-1">
+              Your appointment has been scheduled
+            </p>
           </div>
         </div>
 
         {/* Appointment Details Card */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
           {/* Doctor Info Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
+          <div className="bg-linear-to-r from-blue-600 to-blue-700 p-6 text-white">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center">
                 <User className="h-7 w-7" />
               </div>
               <div>
                 <p className="text-blue-100 text-sm">Your Doctor</p>
-                <p className="text-xl font-bold">Dr. {consultationDetails?.doctorName}</p>
+                <p className="text-xl font-bold">
+                  Dr. {consultationDetails?.doctorName}
+                </p>
               </div>
             </div>
           </div>
@@ -275,8 +332,12 @@ export default async function PaymentSuccessPage({
                 <Calendar className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Date & Time</p>
-                <p className="font-semibold text-slate-900">{appointmentDate}</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                  Date & Time
+                </p>
+                <p className="font-semibold text-slate-900">
+                  {appointmentDate}
+                </p>
                 <p className="text-blue-600 font-bold">{appointmentTime}</p>
               </div>
             </div>
@@ -287,7 +348,9 @@ export default async function PaymentSuccessPage({
                 <Stethoscope className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Specialty</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                  Specialty
+                </p>
                 <p className="font-semibold text-slate-900">{specialtyLabel}</p>
               </div>
             </div>
@@ -295,8 +358,12 @@ export default async function PaymentSuccessPage({
             {/* Amount Paid */}
             <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
               <div>
-                <p className="text-xs text-emerald-600 uppercase tracking-wide font-medium">Amount Paid</p>
-                <p className="text-2xl font-bold text-emerald-700">${consultationDetails?.amountPaid}</p>
+                <p className="text-xs text-emerald-600 uppercase tracking-wide font-medium">
+                  Amount Paid
+                </p>
+                <p className="text-2xl font-bold text-emerald-700">
+                  ${consultationDetails?.amountPaid}
+                </p>
               </div>
               <div className="px-3 py-1 bg-emerald-100 rounded-full">
                 <span className="text-xs font-bold text-emerald-700">PAID</span>
@@ -306,7 +373,9 @@ export default async function PaymentSuccessPage({
             {/* Confirmation ID */}
             <div className="text-center pt-2">
               <p className="text-xs text-slate-400">Confirmation ID</p>
-              <p className="font-mono text-sm text-slate-600">{consultationId.slice(0, 16)}...</p>
+              <p className="font-mono text-sm text-slate-600">
+                {consultationId.slice(0, 16)}...
+              </p>
             </div>
           </div>
 
@@ -337,11 +406,13 @@ export default async function PaymentSuccessPage({
           <p className="text-xs text-slate-500">
             You will also receive a confirmation email with these details.
           </p>
-          <Link href="/dashboard/patient" className="text-sm text-blue-600 hover:underline font-medium">
+          <Link
+            href="/dashboard/patient"
+            className="text-sm text-blue-600 hover:underline font-medium"
+          >
             Go to Dashboard →
           </Link>
         </div>
-
       </div>
     </div>
   );

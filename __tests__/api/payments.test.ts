@@ -2,212 +2,280 @@
  * Tests for POST /api/v1/payments
  */
 
-import { NextRequest } from 'next/server';
-import { createMockUser, createMockConsultation, resetFactories, UserRole, ConsultationStatus } from '../helpers/factories';
-import { createMockSession } from '../helpers/auth-mock';
-import { prismaMock, resetPrismaMock, setupPrismaMock } from '../helpers/prisma-mock';
+import { NextRequest } from "next/server";
+import {
+  createMockUser,
+  createMockConsultation,
+  resetFactories,
+  UserRole,
+  ConsultationStatus,
+} from "../helpers/factories";
+import { createMockSession } from "../helpers/auth-mock";
+import {
+  prismaMock,
+  resetPrismaMock,
+  setupPrismaMock,
+} from "../helpers/prisma-mock";
+
+// Mock Redis helper
+const mockRedisSet = jest.fn();
+const mockRedisDel = jest.fn();
+jest.mock("@/lib/redis", () => ({
+  getRedis: async () => ({
+    set: (...args: unknown[]) => mockRedisSet(...args),
+    del: (...args: unknown[]) => mockRedisDel(...args),
+  }),
+  slotLockKey: (doctorId: string, scheduledStartAtMs: number) =>
+    `slotlock:${doctorId}:${scheduledStartAtMs}`,
+}));
 
 // Mock auth module
 const mockGetSession = jest.fn();
-jest.mock('@/lib/auth', () => ({
-    auth: {
-        api: {
-            getSession: (...args: unknown[]) => mockGetSession(...args),
-        },
+jest.mock("@/lib/auth", () => ({
+  auth: {
+    api: {
+      getSession: (...args: unknown[]) => mockGetSession(...args),
     },
+  },
 }));
 
 // Mock Square Client
 const mockCreatePaymentLink = jest.fn();
-jest.mock('@/lib/square', () => ({
-    squareClient: {
-        checkout: {
-            paymentLinks: {
-                create: (...args: unknown[]) => mockCreatePaymentLink(...args),
-            },
-        },
+jest.mock("@/lib/square", () => ({
+  squareClient: {
+    checkout: {
+      paymentLinks: {
+        create: (...args: unknown[]) => mockCreatePaymentLink(...args),
+      },
     },
+  },
 }));
 
 // Mock crypto.randomUUID
-jest.mock('crypto', () => ({
-    randomUUID: () => 'mock-uuid',
+jest.mock("crypto", () => ({
+  randomUUID: () => "mock-uuid",
 }));
 
-import { POST } from '@/app/api/v1/payments/route';
+import { POST } from "@/app/api/v1/payments/route";
 
-describe('POST /api/v1/payments', () => {
-    beforeEach(() => {
-        resetFactories();
-        resetPrismaMock();
-        setupPrismaMock();
-        mockGetSession.mockReset();
-        mockCreatePaymentLink.mockReset();
+describe("POST /api/v1/payments", () => {
+  beforeEach(() => {
+    resetFactories();
+    resetPrismaMock();
+    setupPrismaMock();
+    mockGetSession.mockReset();
+    mockCreatePaymentLink.mockReset();
+    mockRedisSet.mockReset();
+    mockRedisDel.mockReset();
 
-        // Setup default env vars
-        process.env.SQUARE_LOCATION_ID = 'loc_123';
-        process.env.NEXT_PUBLIC_BASE_URL = 'http://localhost:3000';
+    // Setup default env vars
+    process.env.SQUARE_LOCATION_ID = "loc_123";
+    process.env.NEXT_PUBLIC_BASE_URL = "http://localhost:3000";
+  });
+
+  const originalEnv = process.env;
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  function createRequest(body: object): NextRequest {
+    return new NextRequest("http://localhost:3000/api/v1/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  describe("Authentication", () => {
+    it("should return 401 when not authenticated", async () => {
+      mockGetSession.mockResolvedValue(null);
+      const request = createRequest({ consultationId: "123" });
+      const response = await POST(request);
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe("Validation", () => {
+    it("should return 400 when usage is invalid (missing consultationId)", async () => {
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
+
+      const request = createRequest({});
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+    });
+  });
+
+  describe("Business Logic", () => {
+    it("should return 404 when consultation not found", async () => {
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
+      prismaMock.consultation.findUnique.mockResolvedValue(null);
+
+      const request = createRequest({ consultationId: "missing-id" });
+      const response = await POST(request);
+
+      expect(response.status).toBe(404);
     });
 
-    const originalEnv = process.env;
-    afterEach(() => {
-        process.env = originalEnv;
+    it("should return 403 when user is not the patient", async () => {
+      const patient = createMockUser({ id: "patient-1" });
+      const otherUser = createMockUser({ id: "other-2" });
+      mockGetSession.mockResolvedValue(createMockSession(otherUser));
+
+      const consultation = createMockConsultation({ patientId: patient.id });
+      prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+
+      const request = createRequest({ consultationId: consultation.id });
+      const response = await POST(request);
+
+      expect(response.status).toBe(403);
     });
 
-    function createRequest(body: object): NextRequest {
-        return new NextRequest('http://localhost:3000/api/v1/payments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-    }
+    it("should return 400 when consultation status is invalid (e.g. CANCELLED)", async () => {
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
 
-    describe('Authentication', () => {
-        it('should return 401 when not authenticated', async () => {
-            mockGetSession.mockResolvedValue(null);
-            const request = createRequest({ consultationId: '123' });
-            const response = await POST(request);
-            expect(response.status).toBe(401);
-        });
+      const consultation = createMockConsultation({
+        patientId: patient.id,
+        status: ConsultationStatus.CANCELLED,
+      });
+      prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+
+      const request = createRequest({ consultationId: consultation.id });
+      const response = await POST(request);
+
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error.message).toContain("CANCELLED");
     });
 
-    describe('Validation', () => {
-        it('should return 400 when usage is invalid (missing consultationId)', async () => {
-            const patient = createMockUser();
-            mockGetSession.mockResolvedValue(createMockSession(patient));
+    it("should return 409 when payment already exists", async () => {
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
 
-            const request = createRequest({});
-            const response = await POST(request);
-            expect(response.status).toBe(400);
-            const body = await response.json();
-            expect(body.error.code).toBe('VALIDATION_ERROR');
-        });
+      const consultation = createMockConsultation({
+        patientId: patient.id,
+        doctorId: "doctor_1",
+        scheduledStartAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+
+      prismaMock.payment.findFirst.mockResolvedValue({
+        id: "payment-1",
+        status: "PENDING",
+      } as any);
+
+      const request = createRequest({ consultationId: consultation.id });
+      const response = await POST(request);
+
+      expect(response.status).toBe(409);
     });
 
-    describe('Business Logic', () => {
-        it('should return 404 when consultation not found', async () => {
-            const patient = createMockUser();
-            mockGetSession.mockResolvedValue(createMockSession(patient));
-            prismaMock.consultation.findUnique.mockResolvedValue(null);
+    it("should create payment link and return 201 on success", async () => {
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
 
-            const request = createRequest({ consultationId: 'missing-id' });
-            const response = await POST(request);
+      const consultation = createMockConsultation({
+        patientId: patient.id,
+        specialty: "DERMATOLOGY", // Ensure specialty is set for line item name
+        doctorId: "doctor_1",
+        scheduledStartAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+      prismaMock.payment.findFirst.mockResolvedValue(null); // No existing payment
+      mockRedisSet.mockResolvedValue("OK");
 
-            expect(response.status).toBe(404);
-        });
+      mockCreatePaymentLink.mockResolvedValue({
+        paymentLink: {
+          id: "pl_123",
+          url: "https://square.com/pay/pl_123",
+          orderId: "order_123",
+        },
+      });
 
-        it('should return 403 when user is not the patient', async () => {
-            const patient = createMockUser({ id: 'patient-1' });
-            const otherUser = createMockUser({ id: 'other-2' });
-            mockGetSession.mockResolvedValue(createMockSession(otherUser));
+      prismaMock.payment.create.mockResolvedValue({
+        id: "pay_jb123",
+        consultationId: consultation.id,
+        status: "PENDING",
+      } as any);
 
-            const consultation = createMockConsultation({ patientId: patient.id });
-            prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+      const request = createRequest({ consultationId: consultation.id });
+      const response = await POST(request);
 
-            const request = createRequest({ consultationId: consultation.id });
-            const response = await POST(request);
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.url).toBe("https://square.com/pay/pl_123");
 
-            expect(response.status).toBe(403);
-        });
+      // Verify Square call
+      expect(mockCreatePaymentLink).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: expect.objectContaining({
+            lineItems: expect.arrayContaining([
+              expect.objectContaining({
+                name: "DERMATOLOGY Consultation",
+              }),
+            ]),
+          }),
+        })
+      );
 
-        it('should return 400 when consultation status is invalid (e.g. CANCELLED)', async () => {
-            const patient = createMockUser();
-            mockGetSession.mockResolvedValue(createMockSession(patient));
+      // Verify DB creation
+      expect(prismaMock.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            consultationId: consultation.id,
+            providerCheckoutId: "pl_123",
+          }),
+        })
+      );
 
-            const consultation = createMockConsultation({
-                patientId: patient.id,
-                status: ConsultationStatus.CANCELLED
-            });
-            prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
-
-            const request = createRequest({ consultationId: consultation.id });
-            const response = await POST(request);
-
-            expect(response.status).toBe(400);
-            const body = await response.json();
-            expect(body.error.message).toContain('CANCELLED');
-        });
-
-        it('should return 409 when payment already exists', async () => {
-            const patient = createMockUser();
-            mockGetSession.mockResolvedValue(createMockSession(patient));
-
-            const consultation = createMockConsultation({ patientId: patient.id });
-            prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
-
-            prismaMock.payment.findFirst.mockResolvedValue({ id: 'payment-1', status: 'PENDING' } as any);
-
-            const request = createRequest({ consultationId: consultation.id });
-            const response = await POST(request);
-
-            expect(response.status).toBe(409);
-        });
-
-        it('should create payment link and return 201 on success', async () => {
-            const patient = createMockUser();
-            mockGetSession.mockResolvedValue(createMockSession(patient));
-
-            const consultation = createMockConsultation({
-                patientId: patient.id,
-                specialty: 'DERMATOLOGY' // Ensure specialty is set for line item name
-            });
-            prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
-            prismaMock.payment.findFirst.mockResolvedValue(null); // No existing payment
-
-            mockCreatePaymentLink.mockResolvedValue({
-                paymentLink: {
-                    id: 'pl_123',
-                    url: 'https://square.com/pay/pl_123',
-                    orderId: 'order_123'
-                }
-            });
-
-            prismaMock.payment.create.mockResolvedValue({
-                id: 'pay_jb123',
-                consultationId: consultation.id,
-                status: 'PENDING'
-            } as any);
-
-            const request = createRequest({ consultationId: consultation.id });
-            const response = await POST(request);
-
-
-            expect(response.status).toBe(201);
-            const body = await response.json();
-            expect(body.url).toBe('https://square.com/pay/pl_123');
-
-            // Verify Square call
-            expect(mockCreatePaymentLink).toHaveBeenCalledWith(expect.objectContaining({
-                order: expect.objectContaining({
-                    lineItems: expect.arrayContaining([
-                        expect.objectContaining({
-                            name: 'DERMATOLOGY Consultation'
-                        })
-                    ])
-                })
-            }));
-
-            // Verify DB creation
-            expect(prismaMock.payment.create).toHaveBeenCalledWith(expect.objectContaining({
-                data: expect.objectContaining({
-                    consultationId: consultation.id,
-                    providerCheckoutId: 'pl_123'
-                })
-            }));
-        });
-
-        it('should fail gracefully if location ID is missing', async () => {
-            delete process.env.SQUARE_LOCATION_ID;
-            const patient = createMockUser();
-            mockGetSession.mockResolvedValue(createMockSession(patient));
-
-            const consultation = createMockConsultation({ patientId: patient.id });
-            prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
-
-            const request = createRequest({ consultationId: consultation.id });
-            const response = await POST(request);
-
-            expect(response.status).toBe(500);
-        });
+      // Verify Redis slot lock attempt
+      expect(mockRedisSet).toHaveBeenCalledWith(
+        expect.stringContaining(`slotlock:${consultation.doctorId}:`),
+        consultation.id,
+        expect.objectContaining({ NX: true, EX: 600 })
+      );
     });
+
+    it("should return 409 when slot is locked (another payment in progress)", async () => {
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
+
+      const consultation = createMockConsultation({
+        patientId: patient.id,
+        doctorId: "doctor_1",
+        scheduledStartAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+      prismaMock.payment.findFirst.mockResolvedValue(null); // no payment yet
+
+      // NX set failed => lock exists
+      mockRedisSet.mockResolvedValue(null);
+
+      const request = createRequest({ consultationId: consultation.id });
+      const response = await POST(request);
+      expect(response.status).toBe(409);
+    });
+
+    it("should fail gracefully if location ID is missing", async () => {
+      delete process.env.SQUARE_LOCATION_ID;
+      const patient = createMockUser();
+      mockGetSession.mockResolvedValue(createMockSession(patient));
+
+      const consultation = createMockConsultation({
+        patientId: patient.id,
+        doctorId: "doctor_1",
+        scheduledStartAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      prismaMock.consultation.findUnique.mockResolvedValue(consultation as any);
+
+      const request = createRequest({ consultationId: consultation.id });
+      const response = await POST(request);
+
+      expect(response.status).toBe(500);
+    });
+  });
 });
