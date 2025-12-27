@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import { createMockUser, createMockDoctor, resetFactories } from '../../helpers/factories';
 import { createMockSession } from '../../helpers/auth-mock';
 import { prismaMock, resetPrismaMock, setupPrismaMock } from '../../helpers/prisma-mock';
+import { DateTime } from 'luxon';
 
 // Mock auth module
 const mockGetSession = jest.fn();
@@ -221,6 +222,89 @@ describe('GET /api/v1/doctors/availability', () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.doctorId).toBe('doctor_1');
+    });
+
+    it('should return slots within the patient-selected day when patientTimezone differs from doctor timezone', async () => {
+      const patient = createMockUser();
+      const session = createMockSession(patient);
+      mockGetSession.mockResolvedValue(session);
+
+      const patientTimezone = 'America/Los_Angeles';
+      const doctorTimezone = 'Asia/Tokyo';
+
+      // Choose a date safely within booking horizon, in patient timezone
+      const dateStr = DateTime.now().setZone(patientTimezone).plus({ days: 7 }).toISODate()!;
+
+      const doctor = createMockDoctor({ id: 'doctor_1' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        ...doctor,
+        doctorProfile: {
+          id: 'profile_1',
+          doctorId: doctor.id,
+          specialties: ['CARDIOLOGY'],
+          timezone: doctorTimezone,
+        },
+      } as any);
+
+      prismaMock.consultation.findMany.mockResolvedValue([]);
+
+      const request = createRequest({
+        specialty: 'CARDIOLOGY',
+        date: dateStr,
+        doctorId: 'doctor_1',
+        patientTimezone,
+      });
+      const response = await GET(request);
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+
+      // Every returned slot should fall within the patient-selected calendar day in patientTimezone
+      for (const slot of body.slots ?? []) {
+        const slotPatientDay = DateTime.fromISO(slot.startTime).setZone(patientTimezone).toISODate();
+        expect(slotPatientDay).toBe(dateStr);
+      }
+    });
+
+    it('should honor explicit offset in date even when patientTimezone is provided', async () => {
+      const patient = createMockUser();
+      const session = createMockSession(patient);
+      mockGetSession.mockResolvedValue(session);
+
+      const doctor = createMockDoctor({ id: 'doctor_1' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        ...doctor,
+        doctorProfile: {
+          id: 'profile_1',
+          doctorId: doctor.id,
+          specialties: ['CARDIOLOGY'],
+          timezone: 'UTC',
+        },
+      } as any);
+      prismaMock.consultation.findMany.mockResolvedValue([]);
+
+      // Explicit offset (+09:00) should be honored for day boundaries.
+      // Keep the date in the future to avoid tripping the API's "no booking in the past" validation.
+      // Use Asia/Tokyo (no DST) to reliably produce a +09:00 offset.
+      const dtWithOffset = DateTime.utc()
+        .plus({ days: 1 })
+        .setZone('Asia/Tokyo')
+        .set({ hour: 14, minute: 0, second: 0, millisecond: 0 });
+      const dateWithOffset = dtWithOffset.toISO()!;
+      const patientTimezone = 'America/Los_Angeles';
+
+      const request = createRequest({
+        specialty: 'CARDIOLOGY',
+        doctorId: 'doctor_1',
+        date: dateWithOffset,
+        patientTimezone,
+      });
+      const response = await GET(request);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+
+      // Expect the API's returned `date` to reflect the explicit offset calendar day.
+      expect(body.date).toBe(dtWithOffset.toISODate());
     });
   });
 
