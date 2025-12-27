@@ -11,6 +11,8 @@ interface JoinResponse {
     roomUrl: string;
     token: string;
     expiresAt: string;
+    userRole?: string;
+    isDoctor?: boolean;
 }
 
 interface ErrorResponse {
@@ -21,7 +23,7 @@ interface ErrorResponse {
     };
 }
 
-type PageState = 
+type PageState =
     | { status: 'loading' }
     | { status: 'success'; data: JoinResponse }
     | { status: 'error'; message: string; code: string };
@@ -36,15 +38,16 @@ export default function VideoPage() {
     const params = useParams();
     const router = useRouter();
     const consultationId = params?.consultationId as string;
-    
+
     const [state, setState] = useState<PageState>({ status: 'loading' });
+    const [isEnding, setIsEnding] = useState(false);
 
     // Fetch join URL from API
     useEffect(() => {
         async function fetchJoinUrl() {
             if (!consultationId) {
-                setState({ 
-                    status: 'error', 
+                setState({
+                    status: 'error',
                     message: 'Invalid consultation ID',
                     code: 'VALIDATION_ERROR'
                 });
@@ -61,8 +64,8 @@ export default function VideoPage() {
 
                 if (!response.ok) {
                     const errorData: ErrorResponse = await response.json();
-                    setState({ 
-                        status: 'error', 
+                    setState({
+                        status: 'error',
                         message: errorData.error.message,
                         code: errorData.error.code
                     });
@@ -72,8 +75,8 @@ export default function VideoPage() {
                 const data: JoinResponse = await response.json();
                 setState({ status: 'success', data });
             } catch {
-                setState({ 
-                    status: 'error', 
+                setState({
+                    status: 'error',
                     message: 'Failed to connect to video service',
                     code: 'INTERNAL_ERROR'
                 });
@@ -87,6 +90,32 @@ export default function VideoPage() {
     const handleCallEnded = useCallback(() => {
         router.push('/dashboard');
     }, [router]);
+
+    // Handle end consultation (doctor only)
+    const handleEndConsultation = useCallback(async () => {
+        if (!consultationId) return;
+
+        setIsEnding(true);
+        try {
+            const response = await fetch(`/api/v1/consultations/${consultationId}/close`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                router.push('/dashboard');
+            } else {
+                const errorData = await response.json();
+                alert(`Failed to end consultation: ${errorData.error?.message || 'Unknown error'}`);
+                setIsEnding(false);
+            }
+        } catch {
+            alert('Failed to end consultation. Please try again.');
+            setIsEnding(false);
+        }
+    }, [consultationId, router]);
 
     // Loading state
     if (state.status === 'loading') {
@@ -107,14 +136,14 @@ export default function VideoPage() {
                     <div className="text-red-400 text-6xl mb-6">⚠️</div>
                     <h1 className="text-white text-2xl font-bold mb-4">
                         {state.code === 'UNAUTHORIZED' ? 'Authentication Required' :
-                         state.code === 'FORBIDDEN' ? 'Access Denied' :
-                         'Unable to Join Call'}
+                            state.code === 'FORBIDDEN' ? 'Access Denied' :
+                                'Unable to Join Call'}
                     </h1>
                     <p className="text-slate-400 mb-8">
                         {state.message}
                     </p>
-                    <Link 
-                        href="/dashboard" 
+                    <Link
+                        href="/dashboard"
                         className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg transition-colors"
                     >
                         <ArrowLeft className="h-5 w-5" />
@@ -131,22 +160,33 @@ export default function VideoPage() {
             {/* Header with back button */}
             <div className="bg-slate-800 border-b border-slate-700 p-4 flex-shrink-0">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
-                    <Link 
-                        href="/dashboard" 
+                    <Link
+                        href="/dashboard"
                         className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
                     >
                         <ArrowLeft className="h-5 w-5" />
                         Leave Call
                     </Link>
-                    <div className="text-slate-500 text-sm">
-                        Consultation ID: {consultationId.slice(0, 8)}...
+                    <div className="flex items-center gap-4">
+                        <div className="text-slate-500 text-sm">
+                            Consultation ID: {consultationId.slice(0, 8)}...
+                        </div>
+                        {state.data.isDoctor && (
+                            <button
+                                onClick={handleEndConsultation}
+                                disabled={isEnding}
+                                className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                            >
+                                {isEnding ? 'Ending...' : 'End Consultation'}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
 
             {/* Video frame - takes remaining height */}
             <div className="flex-1 min-h-0 relative">
-                <DailyFrame 
+                <DailyFrame
                     joinUrl={state.data.joinUrl}
                     onCallEnded={handleCallEnded}
                 />

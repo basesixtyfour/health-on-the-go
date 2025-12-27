@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getEffectiveStatus } from "@/lib/consultation-utils";
 
 interface Consultation {
     id: string;
@@ -89,6 +90,7 @@ export default function ConsultationsPage({ initialStatus, initialFilter }: Cons
                         <option value="IN_CALL">In Call</option>
                         <option value="COMPLETED">Completed</option>
                         <option value="CANCELLED">Cancelled</option>
+                        <option value="EXPIRED">Expired</option>
                     </select>
                 </div>
             </div>
@@ -146,11 +148,24 @@ export default function ConsultationsPage({ initialStatus, initialFilter }: Cons
                     {
                         header: "Status",
                         accessorKey: "status",
-                        cell: (c) => (
-                            <Badge variant={c.status === "COMPLETED" ? "default" : c.status === "CANCELLED" ? "destructive" : c.status === "PAID" ? "default" : "secondary"}>
-                                {c.status}
-                            </Badge>
-                        )
+                        cell: (c) => {
+                            const effectiveStatus = getEffectiveStatus(c);
+                            const getBadgeVariant = (status: string) => {
+                                switch (status) {
+                                    case 'COMPLETED': return 'default';
+                                    case 'CANCELLED': return 'destructive';
+                                    case 'PAID': return 'default';
+                                    case 'IN_CALL': return 'destructive';
+                                    case 'EXPIRED': return 'outline';
+                                    default: return 'secondary';
+                                }
+                            };
+                            return (
+                                <Badge variant={getBadgeVariant(effectiveStatus)}>
+                                    {effectiveStatus}
+                                </Badge>
+                            );
+                        }
                     },
                     {
                         header: "Scheduled",

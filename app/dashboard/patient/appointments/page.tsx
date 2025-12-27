@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Video, Calendar, Clock, CreditCard, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { PayButton } from "@/components/patient/PayButton";
+import { getEffectiveStatus, isConsultationJoinable, isConsultationExpired } from "@/lib/consultation-utils";
 
 export default async function AppointmentsPage() {
     const session = await auth.api.getSession({
@@ -28,19 +29,25 @@ export default async function AppointmentsPage() {
     });
 
     const now = new Date();
+    const nowMs = now.getTime();
 
-    // Split into categories
+    // Split into categories using effective status
+    // Upcoming: PAID/IN_CALL that are joinable or upcoming (not expired)
     const upcomingConsultations = consultations.filter(
-        c => c.scheduledStartAt && c.scheduledStartAt > now && ['PAID', 'IN_CALL'].includes(c.status)
+        c => ['PAID', 'IN_CALL'].includes(c.status) && !isConsultationExpired(c, nowMs)
     );
 
-    // Unpaid consultations (CREATED, PAYMENT_PENDING, PAYMENT_FAILED)
+    // Unpaid consultations (CREATED, PAYMENT_PENDING, PAYMENT_FAILED) - only show if time hasn't passed
+    // (backend returns 409 if trying to pay for past appointments)
     const unpaidConsultations = consultations.filter(
-        c => ['CREATED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(c.status)
+        c => ['CREATED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(c.status) &&
+            (!c.scheduledStartAt || c.scheduledStartAt > now)
     );
 
+    // Past: explicitly terminal statuses OR effectively expired (PAID/IN_CALL past join window)
     const pastConsultations = consultations.filter(
-        c => c.status === 'COMPLETED' || c.status === 'CANCELLED' || c.status === 'EXPIRED'
+        c => c.status === 'COMPLETED' || c.status === 'CANCELLED' || c.status === 'EXPIRED' ||
+            isConsultationExpired(c, nowMs)
     );
 
     const getStatusVariant = (status: string) => {
@@ -49,6 +56,7 @@ export default async function AppointmentsPage() {
             case 'PAID': return 'secondary';
             case 'IN_CALL': return 'destructive';
             case 'CANCELLED': return 'outline';
+            case 'EXPIRED': return 'outline';
             case 'PAYMENT_FAILED': return 'destructive';
             case 'CREATED': return 'outline';
             case 'PAYMENT_PENDING': return 'outline';
@@ -109,12 +117,19 @@ export default async function AppointmentsPage() {
                                         <span>{formatDateTime(c.scheduledStartAt)}</span>
                                     </div>
                                     {['PAID', 'IN_CALL'].includes(c.status) && (
-                                        <Link href={`/video/${c.id}`}>
-                                            <Button className="w-full gap-2">
+                                        isConsultationJoinable(c, nowMs) ? (
+                                            <Link href={`/video/${c.id}`}>
+                                                <Button className="w-full gap-2">
+                                                    <Video className="h-4 w-4" />
+                                                    {c.status === 'IN_CALL' ? 'Rejoin Call' : 'Join Consultation'}
+                                                </Button>
+                                            </Link>
+                                        ) : (
+                                            <Button className="w-full gap-2" variant="outline" disabled>
                                                 <Video className="h-4 w-4" />
-                                                {c.status === 'IN_CALL' ? 'Rejoin Call' : 'Join Consultation'}
+                                                Opens 5 min before
                                             </Button>
-                                        </Link>
+                                        )
                                     )}
                                 </CardContent>
                             </Card>
@@ -183,18 +198,21 @@ export default async function AppointmentsPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {pastConsultations.map((c) => (
-                                    <tr key={c.id} className="border-b transition-colors hover:bg-muted/50">
-                                        <td className="p-4 align-middle">
-                                            {c.scheduledStartAt ? new Date(c.scheduledStartAt).toLocaleDateString() : 'N/A'}
-                                        </td>
-                                        <td className="p-4 align-middle">{c.specialty}</td>
-                                        <td className="p-4 align-middle">Dr. {c.doctor?.name || 'N/A'}</td>
-                                        <td className="p-4 align-middle">
-                                            <Badge variant={getStatusVariant(c.status)}>{c.status}</Badge>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {pastConsultations.map((c) => {
+                                    const effectiveStatus = getEffectiveStatus(c, nowMs);
+                                    return (
+                                        <tr key={c.id} className="border-b transition-colors hover:bg-muted/50">
+                                            <td className="p-4 align-middle">
+                                                {c.scheduledStartAt ? new Date(c.scheduledStartAt).toLocaleDateString() : 'N/A'}
+                                            </td>
+                                            <td className="p-4 align-middle">{c.specialty}</td>
+                                            <td className="p-4 align-middle">Dr. {c.doctor?.name || 'N/A'}</td>
+                                            <td className="p-4 align-middle">
+                                                <Badge variant={getStatusVariant(effectiveStatus)}>{effectiveStatus}</Badge>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
