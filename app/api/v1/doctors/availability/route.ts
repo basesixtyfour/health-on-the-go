@@ -168,10 +168,14 @@ function validateDoctorDayWithinBookingWindow(
     .setZone(doctorDayStartInDoctorTZ.zoneName ?? "UTC")
     .startOf("day");
 
-  if (doctorDayStartInDoctorTZ < todayDoctor) {
+  // Allow "yesterday" in doctor's timezone to handle cross-timezone edge cases
+  // where patient's "today" maps to doctor's "yesterday" due to timezone differences.
+  // Individual slots are still filtered by actual time (slot.startTime > now).
+  const yesterdayDoctor = todayDoctor.minus({ days: 1 });
+  if (doctorDayStartInDoctorTZ < yesterdayDoctor) {
     return {
       valid: false,
-      error: "Cannot book appointments in the past for the doctor's timezone",
+      error: "Cannot book appointments in the past",
     };
   }
 
@@ -179,7 +183,7 @@ function validateDoctorDayWithinBookingWindow(
   if (doctorDayStartInDoctorTZ > maxDate) {
     return {
       valid: false,
-      error: `Cannot book more than ${MAX_BOOKING_DAYS_AHEAD} days in advance for the doctor's timezone`,
+      error: `Cannot book more than ${MAX_BOOKING_DAYS_AHEAD} days in advance`,
     };
   }
 
@@ -277,7 +281,8 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Query existing consultations for the doctor within the doctor's UTC day bounds
+      // Query existing PAID consultations for the doctor within the doctor's UTC day bounds
+      // Only count slots as booked after payment is confirmed
       const existingConsultations = await prisma.consultation.findMany({
         where: {
           doctorId: doctor.id,
@@ -286,7 +291,7 @@ export async function GET(request: NextRequest) {
             lte: endOfDayUTC,
           },
           status: {
-            notIn: [ConsultationStatus.CANCELLED, ConsultationStatus.EXPIRED],
+            in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL, ConsultationStatus.COMPLETED],
           },
         },
         select: { scheduledStartAt: true },
@@ -380,6 +385,8 @@ export async function GET(request: NextRequest) {
       Math.max(...boundsByDoctor.map((b) => b.endOfDayUTC.getTime()))
     );
 
+    // Query existing PAID consultations across all doctors
+    // Only count slots as booked after payment is confirmed
     const existingConsultations = await prisma.consultation.findMany({
       where: {
         doctorId: { in: doctors.map((d) => d.id) },
@@ -388,7 +395,7 @@ export async function GET(request: NextRequest) {
           lte: maxEnd,
         },
         status: {
-          notIn: [ConsultationStatus.CANCELLED, ConsultationStatus.EXPIRED],
+          in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL, ConsultationStatus.COMPLETED],
         },
       },
       select: { doctorId: true, scheduledStartAt: true },
