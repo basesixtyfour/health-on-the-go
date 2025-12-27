@@ -122,6 +122,7 @@ export async function createMeetingToken(
         enable_screenshare: true,
         start_video_off: false,
         start_audio_off: false,
+        // Owners (doctors) automatically have transcription permission via is_owner
       },
     }),
   });
