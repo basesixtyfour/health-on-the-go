@@ -4,12 +4,10 @@
  *
  * Changes made:
  * - Properly interpret the patient's input date according to the patient's timezone or the date's offset.
- * - Convert the patient-intended day to the doctor's timezone and use that doctor's calendar day for:
- *     - validation (past / max-ahead checks)
- *     - querying existing consultations (using UTC bounds derived from the doctor's day)
- *     - generating working-hour slots in the doctor's timezone
- * - For multi-doctor queries we compute per-doctor UTC bounds (and use a single combined DB query window covering all doctors),
- *   then filter each doctor's bookings into that doctor's bounds.
+ * - Treat the patient-selected day as a patient-local calendar day and convert that day bounds into UTC instants.
+ * - Generate working-hour slots in the doctor's timezone (to respect DST), convert to UTC instants, then filter to the
+ *   patient-day UTC window.
+ * - Query existing consultations using the patient-day UTC window (canonical), then mark slots as available/unavailable.
  *
  * Assumptions:
  * - Patient's timezone can be provided via the optional `patientTimezone` query param.
@@ -46,12 +44,12 @@ const MAX_BOOKING_DAYS_AHEAD = 30;
  * - If it's date-only (YYYY-MM-DD) and patientTimezone is provided, we interpret it at midnight in patientTimezone.
  * - If it's date-only and no patientTimezone is provided, default to UTC midnight.
  *
- * Returns: { dateTime, error }
+ * Returns: { dateTime, error, hadExplicitOffset }
  */
 function parsePatientInputDate(
   dateStr: string,
   patientTimezone?: string
-): { dateTime?: DateTime; error?: string } {
+): { dateTime?: DateTime; error?: string; hadExplicitOffset?: boolean } {
   if (!dateStr) {
     return { error: "date string required" };
   }
@@ -59,13 +57,11 @@ function parsePatientInputDate(
   // Try parsing. If string contains 'T' and an offset, fromISO will include it.
   const dtFromISO = DateTime.fromISO(dateStr, { setZone: true });
 
-  if (
-    dtFromISO.isValid &&
-    dtFromISO.offset !== 0 &&
-    dateStr.match(/([+-]\d{2}:\d{2}|Z)$/)
-  ) {
-    // If the string had an explicit offset, dtFromISO.setZone has already used it.
-    return { dateTime: dtFromISO };
+  if (dtFromISO.isValid && dateStr.match(/([+-]\d{2}:\d{2}|Z)$/)) {
+    // If the string had an explicit offset or Z, dtFromISO.setZone has already honored it.
+    // IMPORTANT: Callers must NOT re-zone this DateTime into patientTimezone, as that would
+    // convert the instant and violate the "explicit offsets should be honored" rule.
+    return { dateTime: dtFromISO, hadExplicitOffset: true };
   }
 
   // If it's a full timestamp without offset (e.g. 2024-07-10T14:00:00), DateTime.fromISO will set zone to local by default.
@@ -75,7 +71,7 @@ function parsePatientInputDate(
     const zoneToUse = patientTimezone ?? "UTC";
     const dt = DateTime.fromISO(dateStr, { zone: zoneToUse });
     if (!dt.isValid) return { error: "Invalid date-time format" };
-    return { dateTime: dt };
+    return { dateTime: dt, hadExplicitOffset: false };
   }
 
   // Date-only string like YYYY-MM-DD
@@ -83,49 +79,60 @@ function parsePatientInputDate(
     const zoneToUse = patientTimezone ?? "UTC";
     const dt = DateTime.fromISO(dateStr, { zone: zoneToUse });
     if (!dt.isValid) return { error: "Invalid date format" };
-    return { dateTime: dt };
+    return { dateTime: dt, hadExplicitOffset: false };
   }
 
   // Fallback: if parsed ok, return it
-  if (dtFromISO.isValid) return { dateTime: dtFromISO };
+  if (dtFromISO.isValid)
+    return { dateTime: dtFromISO, hadExplicitOffset: false };
 
   return { error: "Invalid date format" };
 }
 
 /**
- * Given a DateTime that represents the patient-intended instant,
- * compute the doctor's calendar day start/end in UTC and return:
- * { doctorDayStartInDoctorTZ, startOfDayUTC: Date, endOfDayUTC: Date, doctorDayLabel }
+ * Compute the patient-local day bounds (start/end of that calendar day in patientTimezone) and return UTC instants.
  *
- * doctorTimezone must be a valid IANA zone string.
+ * This is the canonical day window used for:
+ * - booking-window validation
+ * - DB queries (scheduledStartAt bounds)
+ * - filtering generated slots
  */
-function computeDoctorDayBoundsFromPatientDateTime(
-  patientDateTime: DateTime,
-  doctorTimezone: string
+function computePatientDayBounds(
+  dateStr: string,
+  patientTimezone?: string
 ): {
-  doctorDayStartInDoctorTZ: DateTime;
-  startOfDayUTC: Date;
-  endOfDayUTC: Date;
-  doctorDayLabel: string;
+  patientDayStartInPatientTZ: DateTime;
+  patientDayEndInPatientTZ: DateTime;
+  patientDayStartUTC: Date;
+  patientDayEndUTC: Date;
+  patientDayLabel: string;
 } {
-  // Convert patient's instant into doctor's timezone (this decides which doctor calendar day the patient-intended instant maps to)
-  const inDoctorTZ = patientDateTime.setZone(doctorTimezone);
+  const parsed = parsePatientInputDate(dateStr, patientTimezone);
+  if (parsed.error || !parsed.dateTime) {
+    // Keep caller-side error handling consistent with existing code paths
+    throw new Error(parsed.error || "Invalid date");
+  }
 
-  // Determine the doctor's calendar day (start and end in doctor's zone)
-  const doctorDayStart = inDoctorTZ.startOf("day"); // midnight in doctor's zone
-  const doctorDayEnd = doctorDayStart.endOf("day"); // 23:59:59.999 in doctor's zone
+  // Interpret the calendar day:
+  // - If the input included an explicit offset/zone (or Z), honor it as the source of truth.
+  // - Otherwise, if patientTimezone is provided, interpret the day in patientTimezone.
+  // - Otherwise, use whatever zone parsePatientInputDate produced (UTC fallback).
+  const inPatientTZ =
+    parsed.hadExplicitOffset === true
+      ? parsed.dateTime
+      : patientTimezone
+      ? parsed.dateTime.setZone(patientTimezone)
+      : parsed.dateTime;
 
-  // Convert those bounds to UTC Date for DB queries
-  const startOfDayUTC = doctorDayStart.toUTC().toJSDate();
-  const endOfDayUTC = doctorDayEnd.toUTC().toJSDate();
-
-  const doctorDayLabel = doctorDayStart.toISODate(); // YYYY-MM-DD in doctor's zone
+  const patientDayStart = inPatientTZ.startOf("day");
+  const patientDayEnd = patientDayStart.endOf("day");
 
   return {
-    doctorDayStartInDoctorTZ: doctorDayStart,
-    startOfDayUTC,
-    endOfDayUTC,
-    doctorDayLabel: doctorDayLabel ?? "",
+    patientDayStartInPatientTZ: patientDayStart,
+    patientDayEndInPatientTZ: patientDayEnd,
+    patientDayStartUTC: patientDayStart.toUTC().toJSDate(),
+    patientDayEndUTC: patientDayEnd.toUTC().toJSDate(),
+    patientDayLabel: patientDayStart.toISODate() ?? "",
   };
 }
 
@@ -160,34 +167,40 @@ function generateTimeSlotsForDoctorDay(
   return slots;
 }
 
-/** Validates that the doctor's calendar day is within allowed booking window relative to the doctor's local "today" */
-function validateDoctorDayWithinBookingWindow(
-  doctorDayStartInDoctorTZ: DateTime
-): { valid: boolean; error?: string } {
-  const todayDoctor = DateTime.now()
-    .setZone(doctorDayStartInDoctorTZ.zoneName ?? "UTC")
-    .startOf("day");
+/**
+ * Generate slots for a doctor that overlap the patient-day UTC window.
+ * Slots are generated in doctor-local time (to respect DST) but returned as UTC instants.
+ */
+function generateDoctorSlotsForPatientDayUTCWindow(params: {
+  doctorTimezone: string;
+  patientDayStartUTC: Date;
+  patientDayEndUTC: Date;
+}): { startTime: Date; endTime: Date }[] {
+  const { doctorTimezone, patientDayStartUTC, patientDayEndUTC } = params;
 
-  // Allow "yesterday" in doctor's timezone to handle cross-timezone edge cases
-  // where patient's "today" maps to doctor's "yesterday" due to timezone differences.
-  // Individual slots are still filtered by actual time (slot.startTime > now).
-  const yesterdayDoctor = todayDoctor.minus({ days: 1 });
-  if (doctorDayStartInDoctorTZ < yesterdayDoctor) {
-    return {
-      valid: false,
-      error: "Cannot book appointments in the past",
-    };
+  const startInDoctorTZ = DateTime.fromJSDate(patientDayStartUTC, {
+    zone: "UTC",
+  }).setZone(doctorTimezone);
+  const endInDoctorTZ = DateTime.fromJSDate(patientDayEndUTC, {
+    zone: "UTC",
+  }).setZone(doctorTimezone);
+
+  let currentDoctorDayStart = startInDoctorTZ.startOf("day");
+  const lastDoctorDayStart = endInDoctorTZ.startOf("day");
+
+  const allSlots: { startTime: Date; endTime: Date }[] = [];
+
+  while (currentDoctorDayStart <= lastDoctorDayStart) {
+    allSlots.push(...generateTimeSlotsForDoctorDay(currentDoctorDayStart));
+    currentDoctorDayStart = currentDoctorDayStart.plus({ days: 1 });
   }
 
-  const maxDate = todayDoctor.plus({ days: MAX_BOOKING_DAYS_AHEAD });
-  if (doctorDayStartInDoctorTZ > maxDate) {
-    return {
-      valid: false,
-      error: `Cannot book more than ${MAX_BOOKING_DAYS_AHEAD} days in advance`,
-    };
-  }
-
-  return { valid: true };
+  const startMs = patientDayStartUTC.getTime();
+  const endMs = patientDayEndUTC.getTime();
+  return allSlots.filter((s) => {
+    const t = s.startTime.getTime();
+    return t >= startMs && t <= endMs;
+  });
 }
 
 /** ------------------------------------------------------------------- */
@@ -247,51 +260,63 @@ export async function GET(request: NextRequest) {
       const effectiveDateStr =
         dateStr || DateTime.utc().plus({ days: 1 }).toISODate();
 
-      // Parse patient input date correctly
-      const parsed = parsePatientInputDate(effectiveDateStr, patientTimezone);
-      if (parsed.error) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, parsed.error, 400, {
-          field: "date",
-        });
-      }
-      const patientDateTime = parsed.dateTime!; // an instant representing what patient meant
-
-      // Compute which doctor's day that instant maps to (doctor timezone)
-      const doctorTimezone = doctor.doctorProfile?.timezone ?? "UTC";
-      const {
-        doctorDayStartInDoctorTZ,
-        startOfDayUTC,
-        endOfDayUTC,
-        doctorDayLabel,
-      } = computeDoctorDayBoundsFromPatientDateTime(
-        patientDateTime,
-        doctorTimezone
-      );
-
-      // Validate booking window in doctor's timezone
-      const validation = validateDoctorDayWithinBookingWindow(
-        doctorDayStartInDoctorTZ
-      );
-      if (!validation.valid) {
+      // Compute patient-local day bounds and convert to UTC instants (canonical)
+      let patientDayBounds:
+        | ReturnType<typeof computePatientDayBounds>
+        | undefined;
+      try {
+        patientDayBounds = computePatientDayBounds(
+          effectiveDateStr,
+          patientTimezone
+        );
+      } catch (e) {
         return errorResponse(
           ErrorCodes.VALIDATION_ERROR,
-          validation.error!,
+          e instanceof Error ? e.message : "Invalid date format",
           400,
           { field: "date" }
         );
       }
 
-      // Query existing PAID consultations for the doctor within the doctor's UTC day bounds
+      const doctorTimezone = doctor.doctorProfile?.timezone ?? "UTC";
+
+      // Validate booking window using patient-day UTC bounds
+      const nowMs = Date.now();
+      if (patientDayBounds.patientDayEndUTC.getTime() < nowMs) {
+        return errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          "Cannot book appointments in the past",
+          400,
+          { field: "date" }
+        );
+      }
+      const maxAllowedMs = DateTime.utc()
+        .plus({ days: MAX_BOOKING_DAYS_AHEAD })
+        .toMillis();
+      if (patientDayBounds.patientDayStartUTC.getTime() > maxAllowedMs) {
+        return errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          `Cannot book more than ${MAX_BOOKING_DAYS_AHEAD} days in advance`,
+          400,
+          { field: "date" }
+        );
+      }
+
+      // Query existing PAID consultations for the doctor within the patient-day UTC bounds
       // Only count slots as booked after payment is confirmed
       const existingConsultations = await prisma.consultation.findMany({
         where: {
           doctorId: doctor.id,
           scheduledStartAt: {
-            gte: startOfDayUTC,
-            lte: endOfDayUTC,
+            gte: patientDayBounds.patientDayStartUTC,
+            lte: patientDayBounds.patientDayEndUTC,
           },
           status: {
-            in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL, ConsultationStatus.COMPLETED],
+            in: [
+              ConsultationStatus.PAID,
+              ConsultationStatus.IN_CALL,
+              ConsultationStatus.COMPLETED,
+            ],
           },
         },
         select: { scheduledStartAt: true },
@@ -303,20 +328,26 @@ export async function GET(request: NextRequest) {
           .map((c) => c.scheduledStartAt!.getTime())
       );
 
-      // Generate slots in doctor's timezone for that doctor's day
-      const timeSlots = generateTimeSlotsForDoctorDay(doctorDayStartInDoctorTZ);
+      // Generate slots in doctor timezone (DST-safe), converted to UTC instants, then filtered to patient-day window
+      const timeSlots = generateDoctorSlotsForPatientDayUTCWindow({
+        doctorTimezone,
+        patientDayStartUTC: patientDayBounds.patientDayStartUTC,
+        patientDayEndUTC: patientDayBounds.patientDayEndUTC,
+      });
 
       const now = Date.now();
       const slots = timeSlots.map((slot) => ({
         ...slot,
-        available: !bookedTimes.has(slot.startTime.getTime()) && slot.startTime.getTime() > now,
+        available:
+          !bookedTimes.has(slot.startTime.getTime()) &&
+          slot.startTime.getTime() > now,
         doctorId: doctor.id,
       }));
 
       return successResponse({
         doctorId: doctor.id,
         doctorName: doctor.name,
-        date: doctorDayLabel,
+        date: patientDayBounds.patientDayLabel,
         timezone: doctorTimezone,
         slots,
       });
@@ -345,45 +376,44 @@ export async function GET(request: NextRequest) {
     // For multi-doctor, parse patient date once (or default to tomorrow)
     const effectiveDateStr =
       dateStr || DateTime.utc().plus({ days: 1 }).toISODate();
-    const parsed = parsePatientInputDate(effectiveDateStr, patientTimezone);
-    if (parsed.error) {
-      return errorResponse(ErrorCodes.VALIDATION_ERROR, parsed.error, 400, {
-        field: "date",
-      });
+    let patientDayBounds:
+      | ReturnType<typeof computePatientDayBounds>
+      | undefined;
+    try {
+      patientDayBounds = computePatientDayBounds(
+        effectiveDateStr,
+        patientTimezone
+      );
+    } catch (e) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        e instanceof Error ? e.message : "Invalid date format",
+        400,
+        { field: "date" }
+      );
     }
-    const patientDateTime = parsed.dateTime!;
 
-    // For each doctor compute their day bounds and keep a mapping
-    type DoctorBounds = {
-      doctorId: string;
-      doctorTimezone: string;
-      doctorDayStartInDoctorTZ: DateTime;
-      startOfDayUTC: Date;
-      endOfDayUTC: Date;
-      doctorDayLabel: string;
-    };
-
-    const boundsByDoctor: DoctorBounds[] = doctors.map((doctor) => {
-      const tz = doctor.doctorProfile?.timezone ?? "UTC";
-      const b = computeDoctorDayBoundsFromPatientDateTime(patientDateTime, tz);
-      return {
-        doctorId: doctor.id,
-        doctorTimezone: tz,
-        doctorDayStartInDoctorTZ: b.doctorDayStartInDoctorTZ,
-        startOfDayUTC: b.startOfDayUTC,
-        endOfDayUTC: b.endOfDayUTC,
-        doctorDayLabel: b.doctorDayLabel,
-      };
-    });
-
-    // Build a combined query window to fetch consultations in one DB call:
-    // min startOfDayUTC .. max endOfDayUTC across all doctors
-    const minStart = new Date(
-      Math.min(...boundsByDoctor.map((b) => b.startOfDayUTC.getTime()))
-    );
-    const maxEnd = new Date(
-      Math.max(...boundsByDoctor.map((b) => b.endOfDayUTC.getTime()))
-    );
+    // Validate booking window once using patient-day UTC bounds
+    const nowMs = Date.now();
+    if (patientDayBounds.patientDayEndUTC.getTime() < nowMs) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        "Cannot book appointments in the past",
+        400,
+        { field: "date" }
+      );
+    }
+    const maxAllowedMs = DateTime.utc()
+      .plus({ days: MAX_BOOKING_DAYS_AHEAD })
+      .toMillis();
+    if (patientDayBounds.patientDayStartUTC.getTime() > maxAllowedMs) {
+      return errorResponse(
+        ErrorCodes.VALIDATION_ERROR,
+        `Cannot book more than ${MAX_BOOKING_DAYS_AHEAD} days in advance`,
+        400,
+        { field: "date" }
+      );
+    }
 
     // Query existing PAID consultations across all doctors
     // Only count slots as booked after payment is confirmed
@@ -391,11 +421,15 @@ export async function GET(request: NextRequest) {
       where: {
         doctorId: { in: doctors.map((d) => d.id) },
         scheduledStartAt: {
-          gte: minStart,
-          lte: maxEnd,
+          gte: patientDayBounds.patientDayStartUTC,
+          lte: patientDayBounds.patientDayEndUTC,
         },
         status: {
-          in: [ConsultationStatus.PAID, ConsultationStatus.IN_CALL, ConsultationStatus.COMPLETED],
+          in: [
+            ConsultationStatus.PAID,
+            ConsultationStatus.IN_CALL,
+            ConsultationStatus.COMPLETED,
+          ],
         },
       },
       select: { doctorId: true, scheduledStartAt: true },
@@ -416,38 +450,26 @@ export async function GET(request: NextRequest) {
 
     // Build availability for each doctor using their own bounds and timezone
     const doctorAvailability = doctors.map((doctor) => {
-      const bounds = boundsByDoctor.find((b) => b.doctorId === doctor.id)!;
-      // Validate doctor's booking window for that day; if not valid, return empty slots
-      const validation = validateDoctorDayWithinBookingWindow(
-        bounds.doctorDayStartInDoctorTZ
-      );
-      if (!validation.valid) {
-        return {
-          doctorId: doctor.id,
-          doctorName: doctor.name,
-          specialties: doctor.doctorProfile?.specialties ?? [],
-          timezone: bounds.doctorTimezone,
-          date: bounds.doctorDayLabel,
-          slots: [], // out of booking window
-          note: validation.error,
-        };
-      }
-
+      const doctorTimezone = doctor.doctorProfile?.timezone ?? "UTC";
       const bookedTimes = bookedTimesByDoctor.get(doctor.id) ?? new Set();
-      const timeSlots = generateTimeSlotsForDoctorDay(
-        bounds.doctorDayStartInDoctorTZ
-      );
+      const timeSlots = generateDoctorSlotsForPatientDayUTCWindow({
+        doctorTimezone,
+        patientDayStartUTC: patientDayBounds.patientDayStartUTC,
+        patientDayEndUTC: patientDayBounds.patientDayEndUTC,
+      });
 
       const now = Date.now();
       return {
         doctorId: doctor.id,
         doctorName: doctor.name,
         specialties: doctor.doctorProfile?.specialties ?? [],
-        timezone: bounds.doctorTimezone,
-        date: bounds.doctorDayLabel,
+        timezone: doctorTimezone,
+        date: patientDayBounds.patientDayLabel,
         slots: timeSlots.map((slot) => ({
           ...slot,
-          available: !bookedTimes.has(slot.startTime.getTime()) && slot.startTime.getTime() > now,
+          available:
+            !bookedTimes.has(slot.startTime.getTime()) &&
+            slot.startTime.getTime() > now,
           doctorId: doctor.id,
         })),
       };
@@ -456,7 +478,7 @@ export async function GET(request: NextRequest) {
     const allSlots = doctorAvailability.flatMap((da) => da.slots ?? []);
 
     return successResponse({
-      date: effectiveDateStr,
+      date: patientDayBounds.patientDayLabel,
       specialty,
       doctors: doctorAvailability,
       slots: allSlots,

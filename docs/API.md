@@ -468,7 +468,7 @@ Returns available appointment slots based on specialty and date.
 |-----------|------|----------|-------------|
 | `specialty` | string | Yes | Medical specialty |
 | `date` | string (ISO 8601) | Yes | Date to check availability |
-| `patientTimezone` | string | No | Patient's timezone (IANA format) |
+| `patientTimezone` | string | No | Patient's timezone (IANA format). Strongly recommended when `date` is date-only (YYYY-MM-DD). |
 | `doctorId` | string | No | Filter to specific doctor |
 
 **Example Request:**
@@ -497,6 +497,7 @@ GET /api/v1/doctors/availability?specialty=CARDIOLOGY&date=2024-01-15&patientTim
 - Working hours: 9:00 AM - 5:00 PM (doctor's local time)
 - Slot duration: 30 minutes
 - Maximum booking window: 30 days ahead
+- **Day interpretation:** When `patientTimezone` is provided and `date` is date-only (`YYYY-MM-DD`), availability is calculated for the **patient-selected calendar day** in `patientTimezone`. Slots are returned as UTC timestamps (ISO with `Z`).
 
 ---
 
