@@ -64,6 +64,7 @@ export async function createRoom(
         start_video_off: false,
         start_audio_off: false,
         eject_at_room_exp: true,
+        enable_live_captions_ui: true,
         // Limit to 2 participants (patient + doctor)
         max_participants: 2,
       },
