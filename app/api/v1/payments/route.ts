@@ -126,8 +126,20 @@ export async function POST(request: NextRequest) {
 
         // 5. Prepare Payment Link - Use dynamic pricing based on specialty
         const { getSpecialtyPrice } = await import("@/lib/constants");
+        const priceInDollars = getSpecialtyPrice(consultation.specialty);
+
+        // Validate price to prevent NaN/undefined causing BigInt errors
+        if (typeof priceInDollars !== 'number' || !Number.isFinite(priceInDollars) || priceInDollars <= 0) {
+            console.error(`Invalid specialty price for ${consultation.specialty}: ${priceInDollars}`);
+            return errorResponse(
+                ErrorCodes.INTERNAL_ERROR,
+                `Invalid price configuration for specialty: ${consultation.specialty}`,
+                500
+            );
+        }
+
         // Use Math.round to avoid floating-point precision issues (e.g., 99.99 * 100 = 9998.9999...)
-        const amountInCents = Math.round(getSpecialtyPrice(consultation.specialty) * 100);
+        const amountInCents = Math.round(priceInDollars * 100);
         const redirectUrl = new URL("/checkout/success", baseUrl);
         redirectUrl.searchParams.set("id", consultationId);
 
@@ -138,7 +150,20 @@ export async function POST(request: NextRequest) {
             consultation.scheduledStartAt.getTime()
         );
         const redis = await getRedis();
-        if (redis) {
+
+        if (!redis) {
+            // Fail fast in production - Redis is required to prevent race conditions
+            if (process.env.NODE_ENV === 'production') {
+                console.error(`[payments/POST] Redis unavailable - failing fast. consultationId=${consultationId}, doctorId=${consultation.doctorId}, slot=${consultation.scheduledStartAt.toISOString()}`);
+                return errorResponse(
+                    ErrorCodes.SERVICE_UNAVAILABLE,
+                    "Payment service temporarily unavailable. Please try again.",
+                    503
+                );
+            }
+            // In development, log warning and proceed with degraded behavior
+            console.warn(`[payments/POST] Redis unavailable - proceeding without slot lock (degraded mode). consultationId=${consultationId}, doctorId=${consultation.doctorId}, slot=${consultation.scheduledStartAt.toISOString()}`);
+        } else {
             const acquired = await redis.set(lockKey, consultationId, {
                 NX: true,
                 EX: 600, // 10 minutes
