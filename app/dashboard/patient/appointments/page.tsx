@@ -9,6 +9,7 @@ import { Video, Calendar, Clock, CreditCard, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { PayButton } from "@/components/patient/PayButton";
 import { getEffectiveStatus, isConsultationJoinable, isConsultationExpired } from "@/lib/consultation-utils";
+import { formatDoctorName } from "@/lib/api-utils";
 
 export default async function AppointmentsPage() {
     const session = await auth.api.getSession({
@@ -108,7 +109,7 @@ export default async function AppointmentsPage() {
                                         <Badge variant={getStatusVariant(c.status)}>{c.status}</Badge>
                                     </div>
                                     <CardDescription>
-                                        Dr. {c.doctor?.name || 'TBD'}
+                                        {formatDoctorName(c.doctor?.name, 'TBD')}
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
@@ -157,7 +158,7 @@ export default async function AppointmentsPage() {
                                         </Badge>
                                     </div>
                                     <CardDescription>
-                                        Dr. {c.doctor?.name || 'TBD'}
+                                        {formatDoctorName(c.doctor?.name, 'TBD')}
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
@@ -206,7 +207,7 @@ export default async function AppointmentsPage() {
                                                 {c.scheduledStartAt ? new Date(c.scheduledStartAt).toLocaleDateString() : 'N/A'}
                                             </td>
                                             <td className="p-4 align-middle">{c.specialty}</td>
-                                            <td className="p-4 align-middle">Dr. {c.doctor?.name || 'N/A'}</td>
+                                            <td className="p-4 align-middle">{formatDoctorName(c.doctor?.name)}</td>
                                             <td className="p-4 align-middle">
                                                 <Badge variant={getStatusVariant(effectiveStatus)}>{effectiveStatus}</Badge>
                                             </td>

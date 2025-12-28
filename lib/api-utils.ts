@@ -102,6 +102,18 @@ export async function requireAuth(): Promise<{
   return { session, errorResponse: null };
 }
 
+/**
+ * Format a doctor's name with "Dr." prefix, avoiding duplication if already present
+ */
+export function formatDoctorName(name: string | undefined | null, fallback: string = 'N/A'): string {
+  if (!name) return fallback;
+  // Check if name already starts with "Dr." or "Dr " (case insensitive)
+  if (/^dr\.?\s/i.test(name)) {
+    return name;
+  }
+  return `Dr. ${name}`;
+}
+
 // Re-export shared types for backward compatibility on server-side
 export * from './types';
 
