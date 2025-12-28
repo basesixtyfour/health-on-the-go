@@ -17,7 +17,7 @@ A modern telehealth platform built with Next.js that enables patients to book an
 - 📚 [**API Documentation**](./docs/API.md) - Complete REST API reference
 
 ## Project Video
-- [**Demo**](https://youtu.be/hpjOMS0qcyw)
+- [**Demo**](https://drive.google.com/file/d/1CDTjVSIAMNLodDCZ3-QvutctGDNU_HV1/view?usp=sharing)
 
 ## Tech Stack
 
