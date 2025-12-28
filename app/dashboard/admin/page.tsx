@@ -21,6 +21,7 @@ import { AdminSearchBar } from "@/components/admin/AdminSearchBar";
 import { prisma } from "@/lib/prisma";
 import { UserRole, ConsultationStatus, PaymentStatus } from "@/app/generated/prisma/client";
 import { formatDistanceToNow } from "date-fns";
+import { formatDoctorName } from "@/lib/api-utils";
 
 export default async function AdminDashboard() {
     const session = await auth.api.getSession({
@@ -256,7 +257,7 @@ export default async function AdminDashboard() {
                                             </span>
                                         </div>
                                         <p className="text-xs text-slate-500 mt-0.5">
-                                            with Dr. {consultation.doctor?.name || 'Unassigned'} • {consultation.specialty}
+                                            with {formatDoctorName(consultation.doctor?.name, 'Unassigned')} • {consultation.specialty}
                                         </p>
                                     </div>
                                     <p className="text-xs text-slate-400 ml-2">

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FileText, Calendar, User } from "lucide-react";
+import { formatDoctorName } from "@/lib/api-utils";
 
 export default async function MedicalRecordsPage() {
     const session = await auth.api.getSession({
@@ -76,7 +77,7 @@ export default async function MedicalRecordsPage() {
                                     <CardDescription className="flex items-center gap-4">
                                         <span className="flex items-center gap-1">
                                             <User className="h-3 w-3" />
-                                            Dr. {c.doctor?.name || 'N/A'}
+                                            {formatDoctorName(c.doctor?.name)}
                                         </span>
                                         <span className="flex items-center gap-1">
                                             <Calendar className="h-3 w-3" />

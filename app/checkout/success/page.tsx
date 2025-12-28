@@ -19,6 +19,7 @@ import {
 } from "@/app/generated/prisma/client";
 import { format } from "date-fns";
 import { getSpecialtyPrice, SPECIALTIES } from "@/lib/constants";
+import { formatDoctorName } from "@/lib/api-utils";
 
 /**
  * Payment Success / Appointment Confirmation Page
@@ -334,7 +335,7 @@ export default async function PaymentSuccessPage({
       `Telehealth Consultation - ${specialtyLabel}`
     );
     const details = encodeURIComponent(
-      `Your virtual consultation with Dr. ${consultationDetails.doctorName}.\n\nJoin link: ${appOrigin}/video/${consultationId}`
+      `Your virtual consultation with ${formatDoctorName(consultationDetails.doctorName)}.\n\nJoin link: ${appOrigin}/video/${consultationId}`
     );
 
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startStr}/${endStr}&details=${details}`;
@@ -370,7 +371,7 @@ export default async function PaymentSuccessPage({
               <div>
                 <p className="text-blue-100 text-sm">Your Doctor</p>
                 <p className="text-xl font-bold">
-                  Dr. {consultationDetails?.doctorName}
+                  {formatDoctorName(consultationDetails?.doctorName)}
                 </p>
               </div>
             </div>
